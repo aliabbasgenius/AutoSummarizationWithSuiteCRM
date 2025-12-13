@@ -1,0 +1,26 @@
+You are refactoring a SuiteCRM PHP file.
+
+Goals:
+- Keep behavior identical (no functional changes).
+- Improve readability/structure.
+- Keep public interfaces stable.
+- Do NOT change comments/docblocks unless strictly necessary.
+
+Return ONLY a unified diff (git apply compatible) for exactly ONE file.
+- The very first line MUST be: diff --git a/include/CleanCSV.php b/include/CleanCSV.php
+- Include unified diff headers: --- a/include/CleanCSV.php and +++ b/include/CleanCSV.php
+- Include at least one @@ hunk header.
+- Minimal diff; no extra commentary.
+- Do NOT wrap the diff in markdown fences like ``` or ```diff.
+- Every line in each hunk must start with ' ', '+', or '-'. For blank context lines, use a single leading space.
+
+Target function: CleanCSV::escapeField($cell)
+Required behavior:
+- If $cell is not a string OR is an empty string, return $cell unchanged.
+- Otherwise, if the first character is in startingChars, return escapeChar + $cell; else return $cell.
+
+Prohibited changes:
+- Do NOT add parameter or return type hints.
+- Do NOT change visibility, function name, or signature.
+
+Make only small, safe refactorings (e.g., extract $firstChar variable).

@@ -1,0 +1,2 @@
+// Describe the functionality you want the generators to implement.
+// Example: "Add an API endpoint for exporting SuiteCRM opportunities as CSV."

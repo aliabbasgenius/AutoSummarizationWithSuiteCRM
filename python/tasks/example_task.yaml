@@ -1,0 +1,22 @@
+task_id: suitecrm-login-enhancement
+description: >-
+  Add a multi-factor authentication hook to the SuiteCRM login flow and ensure
+  legacy logic continues to pass automated smoke tests.
+objectives:
+  - implement MFA hook within Login module
+  - update language strings for new UI prompts
+  - ensure quick repair leaves database schema unchanged
+target_modules:
+  - Users
+  - Authentication
+artifacts:
+  - modules/Users/Login.php
+  - custom/modules/Users/Ext
+  - include/MVC/Controller/SugarController.php
+evaluation:
+  tests:
+    - phpunit --filter LoginTest
+    - php cli/maintenance.php quick-repair
+  metrics:
+    - functional_correctness
+    - hallucination_rate

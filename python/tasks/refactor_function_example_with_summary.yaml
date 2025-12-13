@@ -1,0 +1,23 @@
+task_id: refactor-function-with-summary
+
+description: >
+  Refactor the function CleanCSV::escapeField($cell) in SuiteCRM/include/CleanCSV.php.
+  Keep behavior identical (no functional changes). Improve readability/structure.
+  Preserve exact behavior: if $cell is not a string OR is an empty string, return $cell unchanged.
+  Otherwise, if the first character is in startingChars, return escapeChar + $cell; else return $cell.
+
+objectives:
+  - Keep behavior identical (no functional changes)
+  - Improve readability and structure
+  - Keep public interfaces stable
+  - Do not change comments/docblocks unless strictly necessary
+
+# Use a summary artifact to demonstrate the "auto summarization" approach feeding into refactoring.
+# The agent will include excerpts from these artifacts in its prompt.
+artifacts:
+  - suitecrm_agent/runs/cleancsv_summary.json
+  - include/CleanCSV.php
+
+# Keep module summaries optional for this demo.
+# You can add SuiteCRM module names here later if you want broader context.
+target_modules: []
