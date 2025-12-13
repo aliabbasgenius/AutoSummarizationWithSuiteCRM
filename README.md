@@ -122,36 +122,112 @@ python -m suitecrm_agent tasks/example_task.yaml --output agent_run.json
 
 ## SuiteCRM CLI Integration
 
-PowerShell helpers (run from the SuiteCRM root directory):
-php cli/maintenance.php clear-cache
-php cli/maintenance.php quick-repair
-# Forward upgrade arguments to silentUpgrade.php
-php cli/maintenance.php silent-upgrade <zip-file> <admin-user> <admin-pass> <log-dir> <patch-dir>
+# AutoSummarizationWithSuiteCRM
+
+This repo focuses on two approaches for auto-summarization-driven code generation/refactoring against a SuiteCRM codebase:
+
+1) **.NET console tool**: `AzureOpenAICodeGen/`
+2) **Python scripts + agent**: `python/` and `python/suitecrm_agent/`
+
+Generated outputs and local logs are intentionally kept out of Git (see `.gitignore`).
+
+## Prerequisites
+
+- .NET SDK 9.0
+- Python 3.10+
+- PHP CLI (for offline `php -l` syntax checks)
+- Azure OpenAI resource + a chat-capable deployment (example: `gpt-4o-mini`)
+
+## Configuration
+
+Set environment variables (Windows PowerShell):
+
+```powershell
+setx AZURE_OPENAI_ENDPOINT "https://<your-resource>.openai.azure.com/"
+setx AZURE_OPENAI_KEY "<api-key>"
+setx AZURE_OPENAI_DEPLOYMENT "gpt-4o-mini"
+setx AZURE_OPENAI_API_VERSION "2025-01-01-preview"
+setx AZURE_OPENAI_TEMPERATURE "0.2"
+setx AZURE_OPENAI_MAX_TOKENS "1200"
 ```
 
-`clear-cache` purges caches and metadata. `quick-repair` performs a Quick Repair & Rebuild with database synchronization. `silent-upgrade` passes all arguments to `modules/UpgradeWizard/silentUpgrade.php` for unattended upgrades.
+Or create `LLMCodeGenerator/.env`:
 
-## Evaluating Errors and Hallucinations
+```
+AZURE_OPENAI_ENDPOINT=https://<your-resource>.openai.azure.com/
+AZURE_OPENAI_API_KEY=<api-key>
+AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
+AZURE_OPENAI_API_VERSION=2025-01-01-preview
+AZURE_OPENAI_TEMPERATURE=0.2
+AZURE_OPENAI_MAX_TOKENS=1200
+```
 
-1. **Compile the .NET project**: `dotnet build` verifies dependencies and API usage.
-2. **Run the Python scripts**:
-   - `python generate_from_codebase.py --sources <paths>`
-   - `python generate_summary.py --sources <paths>`
-   Inspect timing output and review generated artifacts for unexpected content.
-3. **Validate SuiteCRM after automation**:
-   - **Offline (no SuiteCRM install/DB required):**
-     - `php -l <file.php>` for syntax checks on touched files
-     - `php vendor/bin/phpstan --version` (or `php vendor/bin/phpstan analyse ...`) for static analysis
-     - `git apply --check <patch>` before applying model-generated patches
-   - **Installed/configured instance (requires `SuiteCRM/config.php` + DB):**
-     - `php cli/maintenance.php status`
-     - `php cli/maintenance.php quick-repair` and examine `suitecrm.log`
-     - Execute relevant SuiteCRM smoke tests.
-4. **Regression safeguards**:
-   - Review diffs before committing generated code
-   - Lower temperature (e.g., `--temperature 0.0`) to reduce variance for large prompts
-   - If the .NET generator emits compilation errors, refine `prompt.txt` and rerun `dotnet run`
+## Approach A: .NET (`AzureOpenAICodeGen`)
 
-## Prompt Management
+From `LLMCodeGenerator/AzureOpenAICodeGen`:
 
-`prompt.txt` stores the request shared across the .NET application and Python utilities. Keep it up to date with the artifact description you need.
+```powershell
+dotnet restore
+dotnet run -- --prompt ..\prompt.txt --output .\generated_code.txt
+```
+
+Refactor (writes a unified diff patch):
+
+```powershell
+dotnet run -- --refactor ..\..\SuiteCRM\include\CleanCSV.php --output cleancsv_refactor.patch
+```
+
+Logs (local, ignored): `AzureOpenAICodeGen/runs/azure_openai_runs.jsonl`
+
+## Approach B: Python scripts (`python/`)
+
+Create venv once:
+
+```powershell
+cd LLMCodeGenerator\python
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+Generate code from SuiteCRM context:
+
+```powershell
+python generate_from_codebase.py --sources ..\..\SuiteCRM\include\CleanCSV.php --output generated_code_python.txt --run-log .\runs\python_runs.jsonl --print-run-id
+```
+
+Generate + validate (same `run_id` logged for both steps):
+
+```powershell
+python generate_from_codebase.py --sources ..\..\SuiteCRM\include\CleanCSV.php --output generated_code_python.txt --run-log .\runs\python_runs.jsonl --validate --suitecrm-root ..\..\SuiteCRM --print-run-id
+```
+
+Summarize a module to JSON:
+
+```powershell
+python generate_summary.py --sources ..\..\SuiteCRM\modules\Administration --output code_summary.json --run-log .\runs\python_runs.jsonl --print-run-id
+```
+
+Validate a generated artifact (offline checks + optional `php -l`):
+
+```powershell
+python validate_generated_output.py --input generated_code_python.txt --suitecrm-root ..\..\SuiteCRM --report .\runs\generated_code_python.validation.json
+```
+
+Logs (local, ignored): `python/runs/python_runs.jsonl`
+
+## Python Agent (`python/suitecrm_agent`)
+
+```powershell
+cd LLMCodeGenerator\python
+python -m suitecrm_agent tasks\example_task.yaml --output agent_run.json
+```
+
+Agent logs (local, ignored): `python/suitecrm_agent/runs/agent_runs.jsonl`
+
+## Compare runs
+
+```powershell
+cd LLMCodeGenerator\python
+python summarize_run_logs.py
+```

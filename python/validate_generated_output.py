@@ -18,6 +18,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -144,15 +145,18 @@ def run_php_lint_if_applicable(text: str, input_path: Path, skip: bool) -> Findi
     if not looks_like_php(text, input_path):
         return None
 
-    tmp = input_path.with_suffix(input_path.suffix + ".__lint.php")
     lint_text = text
     if not lint_text.lstrip().startswith("<?php"):
         lint_text = "<?php\n" + lint_text
-    tmp.write_text(lint_text, encoding="utf-8")
 
+    tmp_path: str | None = None
     try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".php", delete=False) as handle:
+            handle.write(lint_text)
+            tmp_path = handle.name
+
         proc = subprocess.run(
-            ["php", "-l", str(tmp)],
+            ["php", "-l", tmp_path],
             capture_output=True,
             text=True,
             timeout=30,
@@ -167,8 +171,14 @@ def run_php_lint_if_applicable(text: str, input_path: Path, skip: bool) -> Findi
         return Finding(
             severity="warn",
             code="php.lint_timeout",
-            message=f"php -l timed out for {tmp.name}.",
+            message="php -l timed out.",
         )
+    finally:
+        if tmp_path:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
     output = (proc.stdout or "") + (proc.stderr or "")
     if proc.returncode != 0:
@@ -235,19 +245,68 @@ def append_validation_run(
     )
 
 
+def resolve_path(path_str: str) -> Path:
+    path = Path(path_str).expanduser()
+    if not path.is_absolute():
+        path = (Path.cwd() / path).resolve()
+    return path
+
+
+def resolve_existing_file(path_str: str) -> Path | None:
+    path = resolve_path(path_str)
+    if not path.exists() or not path.is_file():
+        return None
+    return path
+
+
+def maybe_append_validation_log(
+    *,
+    run_log: str,
+    run_id: str,
+    input_path: Path,
+    suitecrm_root: Path,
+    report: dict[str, Any],
+    findings: list[Finding],
+) -> None:
+    if not (run_log or "").strip():
+        return
+
+    run_log_path = resolve_path(run_log)
+    append_validation_run(
+        run_log_path=run_log_path,
+        run_id=run_id,
+        input_path=input_path,
+        suitecrm_root=suitecrm_root,
+        report=report,
+        findings=findings,
+    )
+
+
+def maybe_write_report(report_path: str, report: dict[str, Any]) -> None:
+    if not (report_path or "").strip():
+        return
+
+    path = resolve_path(report_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    print(f"Report written to {path}")
+
+
+def print_findings(findings: list[Finding]) -> None:
+    for finding in findings:
+        if finding.severity != "info":
+            print(f"[{finding.severity}] {finding.code}: {finding.message}")
+
+
 def main() -> int:
     args = parse_args()
 
-    input_path = Path(args.input).expanduser()
-    if not input_path.is_absolute():
-        input_path = (Path.cwd() / input_path).resolve()
-    if not input_path.exists() or not input_path.is_file():
-        print(f"Error: input not found: {input_path}", file=sys.stderr)
+    input_path = resolve_existing_file(args.input)
+    if input_path is None:
+        print(f"Error: input not found: {resolve_path(args.input)}", file=sys.stderr)
         return 2
 
-    suitecrm_root = Path(args.suitecrm_root).expanduser()
-    if not suitecrm_root.is_absolute():
-        suitecrm_root = (Path.cwd() / suitecrm_root).resolve()
+    suitecrm_root = resolve_path(args.suitecrm_root)
 
     report, findings = validate_file(
         input_path=input_path,
@@ -258,34 +317,19 @@ def main() -> int:
     errors = [f for f in findings if f.severity == "error"]
     warns = [f for f in findings if f.severity == "warn"]
 
-    # Append a compact run record for log-based comparisons.
-    if (args.run_log or "").strip():
-        run_log_path = Path(args.run_log).expanduser()
-        if not run_log_path.is_absolute():
-            run_log_path = (Path.cwd() / run_log_path).resolve()
+    run_id = (args.run_id or "").strip() or str(uuid.uuid4())
+    maybe_append_validation_log(
+        run_log=args.run_log,
+        run_id=run_id,
+        input_path=input_path,
+        suitecrm_root=suitecrm_root,
+        report=report,
+        findings=findings,
+    )
 
-        run_id = (args.run_id or "").strip() or str(uuid.uuid4())
-        append_validation_run(
-            run_log_path=run_log_path,
-            run_id=run_id,
-            input_path=input_path,
-            suitecrm_root=suitecrm_root,
-            report=report,
-            findings=findings,
-        )
+    maybe_write_report(args.report, report)
 
-    if (args.report or "").strip():
-        report_path = Path(args.report).expanduser()
-        if not report_path.is_absolute():
-            report_path = (Path.cwd() / report_path).resolve()
-        report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-        print(f"Report written to {report_path}")
-
-    # Console summary
-    for f in findings:
-        if f.severity != "info":
-            print(f"[{f.severity}] {f.code}: {f.message}")
+    print_findings(findings)
 
     if errors:
         print(f"Validation failed: {len(errors)} error(s), {len(warns)} warning(s)")
