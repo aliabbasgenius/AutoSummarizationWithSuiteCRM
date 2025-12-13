@@ -31,6 +31,46 @@ DEFAULT_PROMPT = (
 SUPPORTED_EXTENSIONS = (".php", ".js", ".ts", ".tpl")
 
 
+def _dotenv_candidates() -> list[Path]:
+    return [
+        Path(__file__).resolve().parents[1] / ".env",  # LLMCodeGenerator/.env
+        Path(__file__).resolve().parents[2] / ".env",  # repo root .env (if present)
+    ]
+
+
+def _read_dotenv_value(key: str) -> str | None:
+    for env_path in _dotenv_candidates():
+        if not env_path.exists() or not env_path.is_file():
+            continue
+        for raw_line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k = k.strip()
+            if k != key:
+                continue
+            value = v.strip().strip('"').strip("'")
+            return value if value else None
+    return None
+
+
+def prefer_deployment_from_dotenv() -> None:
+    """Prefer AZURE_OPENAI_DEPLOYMENT from .env over machine/user env vars."""
+
+    value = _read_dotenv_value("AZURE_OPENAI_DEPLOYMENT")
+    if value:
+        os.environ["AZURE_OPENAI_DEPLOYMENT"] = value
+
+
+def default_suitecrm_root() -> Path:
+    return Path(__file__).resolve().parents[2] / "SuiteCRM"
+
+
+def default_suitecrm_summary_output_path() -> str:
+    return str((default_suitecrm_root() / "custom" / "LLMCodeGenerator" / "code_summary.json").resolve())
+
+
 def load_dotenv_fallback() -> None:
     """Best-effort .env loader (no external deps).
 
@@ -41,10 +81,7 @@ def load_dotenv_fallback() -> None:
     3) repo-root .env
     """
 
-    candidates = [
-        Path(__file__).resolve().parents[1] / ".env",  # LLMCodeGenerator/.env
-        Path(__file__).resolve().parents[2] / ".env",  # repo root .env (if present)
-    ]
+    candidates = _dotenv_candidates()
 
     for env_path in candidates:
         if not env_path.exists() or not env_path.is_file():
@@ -130,7 +167,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output",
-        default="code_summary.json",
+        default=default_suitecrm_summary_output_path(),
         help="Path to the JSON file where the summary will be stored.",
     )
     parser.add_argument(
@@ -244,6 +281,8 @@ def main() -> int:
     else:
         load_dotenv_fallback()
 
+    prefer_deployment_from_dotenv()
+
     args = parse_args()
 
     if not args.endpoint or not args.api_key or not args.deployment:
@@ -314,6 +353,7 @@ def main() -> int:
     }
 
     output_path = Path(args.output).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     if (args.run_log or "").strip():

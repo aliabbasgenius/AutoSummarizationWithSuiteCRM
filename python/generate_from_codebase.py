@@ -41,6 +41,52 @@ SUPPORTED_EXTENSIONS = (".php", ".js", ".ts", ".tpl")
 DEFAULT_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
 
 
+def _dotenv_candidates() -> list[Path]:
+    return [
+        Path(__file__).resolve().parents[1] / ".env",  # LLMCodeGenerator/.env
+        Path(__file__).resolve().parents[2] / ".env",  # repo root .env (if present)
+    ]
+
+
+def _read_dotenv_value(key: str) -> str | None:
+    for env_path in _dotenv_candidates():
+        if not env_path.exists() or not env_path.is_file():
+            continue
+        for raw_line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k = k.strip()
+            if k != key:
+                continue
+            value = v.strip().strip('"').strip("'")
+            return value if value else None
+    return None
+
+
+def prefer_deployment_from_dotenv() -> None:
+    """Prefer AZURE_OPENAI_DEPLOYMENT from .env over machine/user env vars.
+
+    This avoids stale `setx AZURE_OPENAI_DEPLOYMENT ...` values overriding the
+    intended repo-local deployment.
+    """
+
+    value = _read_dotenv_value("AZURE_OPENAI_DEPLOYMENT")
+    if value:
+        os.environ["AZURE_OPENAI_DEPLOYMENT"] = value
+
+
+def default_suitecrm_root() -> Path:
+    return Path(__file__).resolve().parents[2] / "SuiteCRM"
+
+
+def default_suitecrm_output_path() -> str:
+    # Write generated artifacts into the SuiteCRM working tree by default.
+    # This makes it obvious that the tool is producing SuiteCRM-relevant output.
+    return str((default_suitecrm_root() / "custom" / "LLMCodeGenerator" / "generated_code_python.txt").resolve())
+
+
 def load_dotenv_fallback() -> None:
     """Best-effort .env loader (no external deps).
 
@@ -51,10 +97,7 @@ def load_dotenv_fallback() -> None:
     3) repo-root .env
     """
 
-    candidates = [
-        Path(__file__).resolve().parents[1] / ".env",  # LLMCodeGenerator/.env
-        Path(__file__).resolve().parents[2] / ".env",  # repo root .env (if present)
-    ]
+    candidates = _dotenv_candidates()
 
     for env_path in candidates:
         if not env_path.exists() or not env_path.is_file():
@@ -130,7 +173,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output",
-        default="generated_code_python.txt",
+        default=default_suitecrm_output_path(),
         help="Destination path for the generated code.",
     )
     parser.add_argument(
@@ -286,6 +329,8 @@ def main() -> int:
     else:
         load_dotenv_fallback()
 
+    prefer_deployment_from_dotenv()
+
     args = parse_args()
 
     if not args.endpoint or not args.api_key or not args.deployment:
@@ -354,6 +399,7 @@ def main() -> int:
             "Fix: deploy a chat-capable model (e.g., gpt-4o / gpt-4.1) and set AZURE_OPENAI_DEPLOYMENT to that deployment name."
         )
     output_path = Path(args.output).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(output_text, encoding="utf-8")
 
     if (args.run_log or "").strip():

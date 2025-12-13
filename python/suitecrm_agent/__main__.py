@@ -6,6 +6,7 @@ import argparse
 import json
 from pathlib import Path
 from typing import Any
+import os
 
 import yaml
 
@@ -18,6 +19,32 @@ from .agent import SuiteCRMAgent
 from .config import AgentConfig
 from .models import AgentTask
 from .utils import console
+
+
+def _read_dotenv_value(key: str) -> str | None:
+    candidates = [
+        Path(__file__).resolve().parents[2] / ".env",  # LLMCodeGenerator/.env
+        Path(__file__).resolve().parents[3] / ".env",  # repo root .env (if present)
+    ]
+    for env_path in candidates:
+        if not env_path.exists() or not env_path.is_file():
+            continue
+        for raw_line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            if k.strip() != key:
+                continue
+            value = v.strip().strip('"').strip("'")
+            return value if value else None
+    return None
+
+
+def prefer_deployment_from_dotenv() -> None:
+    value = _read_dotenv_value("AZURE_OPENAI_DEPLOYMENT")
+    if value:
+        os.environ["AZURE_OPENAI_DEPLOYMENT"] = value
 
 
 def parse_args() -> argparse.Namespace:
@@ -60,6 +87,8 @@ def load_config(path: str | None) -> AgentConfig:
 def main() -> int:
     if load_dotenv is not None:
         load_dotenv()
+
+    prefer_deployment_from_dotenv()
 
     args = parse_args()
     config = load_config(args.config)

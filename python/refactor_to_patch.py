@@ -28,6 +28,35 @@ import difflib
 import re
 
 
+def _dotenv_candidates() -> list[Path]:
+    return [
+        Path(__file__).resolve().parents[1] / ".env",  # LLMCodeGenerator/.env
+        Path(__file__).resolve().parents[2] / ".env",  # repo root .env (if present)
+    ]
+
+
+def _read_dotenv_value(key: str) -> str | None:
+    for env_path in _dotenv_candidates():
+        if not env_path.exists() or not env_path.is_file():
+            continue
+        for raw_line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            if k.strip() != key:
+                continue
+            value = v.strip().strip('"').strip("'")
+            return value if value else None
+    return None
+
+
+def prefer_deployment_from_dotenv() -> None:
+    value = _read_dotenv_value("AZURE_OPENAI_DEPLOYMENT")
+    if value:
+        os.environ["AZURE_OPENAI_DEPLOYMENT"] = value
+
+
 class ModelOutputError(RuntimeError):
     pass
 
@@ -247,6 +276,8 @@ def _replace_php_function(original_text: str, function_name: str, new_function_t
 def main() -> int:
     if load_dotenv is not None:
         load_dotenv()  # pragma: no cover
+
+    prefer_deployment_from_dotenv()
 
     args = parse_args()
 

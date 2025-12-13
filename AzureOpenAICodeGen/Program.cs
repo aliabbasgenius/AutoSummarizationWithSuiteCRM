@@ -490,6 +490,13 @@ static void LoadDotEnv()
         // .env is optional
     }
 
+    // Prefer the repo-local deployment name from .env over any stale machine/user environment variable.
+    var deploymentFromDotEnv = TryReadDotEnvValue("AZURE_OPENAI_DEPLOYMENT");
+    if (!string.IsNullOrWhiteSpace(deploymentFromDotEnv))
+    {
+        Environment.SetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT", deploymentFromDotEnv);
+    }
+
     var key = Environment.GetEnvironmentVariable("AZURE_OPENAI_KEY");
     if (string.IsNullOrWhiteSpace(key))
     {
@@ -499,6 +506,49 @@ static void LoadDotEnv()
             Environment.SetEnvironmentVariable("AZURE_OPENAI_KEY", apiKey);
         }
     }
+}
+
+static string? TryReadDotEnvValue(string key)
+{
+    try
+    {
+        var directory = new DirectoryInfo(Directory.GetCurrentDirectory());
+        while (directory is not null)
+        {
+            var envPath = Path.Combine(directory.FullName, ".env");
+            if (File.Exists(envPath))
+            {
+                foreach (var rawLine in File.ReadLines(envPath))
+                {
+                    var line = rawLine.Trim();
+                    if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#') || !line.Contains('='))
+                    {
+                        continue;
+                    }
+
+                    var parts = line.Split('=', 2);
+                    var k = parts[0].Trim();
+                    if (!string.Equals(k, key, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    var value = parts[1].Trim().Trim('"').Trim('\'');
+                    return string.IsNullOrWhiteSpace(value) ? null : value;
+                }
+
+                return null;
+            }
+
+            directory = directory.Parent;
+        }
+    }
+    catch
+    {
+        // best-effort only
+    }
+
+    return null;
 }
 
 static IConfiguration BuildConfiguration(string[] args)
