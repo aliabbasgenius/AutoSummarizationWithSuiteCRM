@@ -1,44 +1,20 @@
 # AutoSummarizationWithSuiteCRM
 
-This workspace combines a .NET 9 console application, Python automation scripts, and SuiteCRM CLI helpers to streamline Azure OpenAI assisted code generation.
+This folder (`LLMCodeGenerator/`) contains tooling to compare two LLM-driven approaches against the SuiteCRM codebase:
+
+1) Full-context prompting (no summarization)
+2) Auto-summarization prompting (summarize → aggregate → generate)
+
+Generated artifacts are written into the SuiteCRM working tree by default under:
+
+- `SuiteCRM/custom/LLMCodeGenerator/`
 
 ## Prerequisites
 
 - .NET SDK 9.0 (Preview) available on the `PATH`
-- Python 3.10 or later with `pip`
-- PHP CLI for SuiteCRM maintenance commands
+- Python 3.10+ with `pip`
+- (Optional) PHP CLI if you want `php -l` validation
 - Access to an Azure OpenAI resource with a chat-capable deployment
-
-Set the following environment variables before running any generators:
-
-```powershell
-setx AZURE_OPENAI_API_VERSION "2025-01-01-preview"
-setx AZURE_OPENAI_TEMPERATURE "0.2"
-setx AZURE_OPENAI_MAX_TOKENS "1200"
-```
-
-> Tip: restart the terminal after calling `setx` so the values are available.
-
-If you copied a full URL like `.../openai/deployments/<deployment>/chat/completions?...`, set `AZURE_OPENAI_ENDPOINT` to just the base resource URL (`https://<resource>.openai.azure.com/`). The Python tooling also accepts the full URL and will normalize it automatically.
-
-Alternatively, create a `.env` file in the repository root containing values such as:
-
-```
-AZURE_OPENAI_ENDPOINT=https://<your-resource>.openai.azure.com/
-AZURE_OPENAI_API_KEY=<api-key>
-
-# AutoSummarizationWithSuiteCRM
-
-This folder (`LLMCodeGenerator/`) contains tooling to run two approaches for auto-summarization-driven generation/refactoring against a SuiteCRM codebase:
-
-1) **.NET console tool**: `AzureOpenAICodeGen/`
-2) **Python scripts + agent**: `python/` and `python/suitecrm_agent/`
-
-By default, generated artifacts are written into the SuiteCRM working tree under:
-
-- `SuiteCRM/custom/LLMCodeGenerator/`
-
-Note: SuiteCRM is a separate repo in your workspace, so writing there will create untracked/modified files in that repo.
 
 ## Configuration
 
@@ -55,6 +31,11 @@ setx AZURE_OPENAI_MAX_TOKENS "1200"
 
 Or create `LLMCodeGenerator/.env` with the same values.
 
+Note:
+- If you copied a full URL like `.../openai/deployments/<deployment>/chat/completions?...`, set `AZURE_OPENAI_ENDPOINT` to the base resource URL (`https://<resource>.openai.azure.com/`).
+- The Python scripts normalize full URLs automatically.
+- The Python scripts prefer the deployment value from `.env` to avoid stale `setx AZURE_OPENAI_DEPLOYMENT` values.
+
 ## Approach A: .NET (`AzureOpenAICodeGen`)
 
 From `LLMCodeGenerator/AzureOpenAICodeGen`:
@@ -64,7 +45,7 @@ dotnet restore
 dotnet run -- --prompt ..\prompt.txt --output ..\..\SuiteCRM\custom\LLMCodeGenerator\generated_code.txt
 ```
 
-Refactor (writes a unified diff patch file; you apply it manually to SuiteCRM):
+Refactor (writes a unified diff patch file; apply it manually to SuiteCRM):
 
 ```powershell
 dotnet run -- --refactor ..\..\SuiteCRM\include\CleanCSV.php --output cleancsv_refactor.patch
@@ -72,7 +53,7 @@ dotnet run -- --refactor ..\..\SuiteCRM\include\CleanCSV.php --output cleancsv_r
 
 Logs (local, ignored): `AzureOpenAICodeGen/runs/azure_openai_runs.jsonl`
 
-## Approach B: Python scripts (`python/`)
+## Approach B1: Python (full-context prompting)
 
 Create venv once:
 
@@ -83,19 +64,43 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Generate code from SuiteCRM context (default output goes to `SuiteCRM/custom/LLMCodeGenerator/generated_code_python.txt`):
+Generate (writes `SuiteCRM/custom/LLMCodeGenerator/generated_code_raw.txt` by default):
 
 ```powershell
 python generate_from_codebase.py --sources ..\..\SuiteCRM\include\CleanCSV.php --run-log .\runs\python_runs.jsonl --print-run-id
 ```
 
-Generate + validate (same `run_id` logged for both steps):
+Generate into `SuiteCRM/modules/<ModuleName>/...` (creates module folder if missing):
+
+```powershell
+python generate_from_codebase.py --sources ..\..\SuiteCRM\include\CleanCSV.php --output-mode module --module-name LLMCodeGenCompare_Raw --run-log .\runs\python_runs.jsonl
+```
+
+## Approach B2: Python (auto-summarization prompting)
+
+This script runs: module grouping → per-module hierarchical JSON summaries → aggregation → generation.
+
+Generate (writes `SuiteCRM/custom/LLMCodeGenerator/generated_code_autosummary.txt` by default):
+
+```powershell
+python generate_from_codebase_and_auto_summarization.py --sources ..\..\SuiteCRM\include\CleanCSV.php --run-log .\runs\python_runs.jsonl --print-run-id
+```
+
+Generate into `SuiteCRM/modules/<ModuleName>/...`:
+
+```powershell
+python generate_from_codebase_and_auto_summarization.py --sources ..\..\SuiteCRM\include\CleanCSV.php --output-mode module --module-name LLMCodeGenCompare_AutoSummary --run-log .\runs\python_runs.jsonl
+```
+
+## Validation + summary-only helper
+
+Validate generated outputs (offline validation; PHP lint is optional):
 
 ```powershell
 python generate_from_codebase.py --sources ..\..\SuiteCRM\include\CleanCSV.php --run-log .\runs\python_runs.jsonl --validate --suitecrm-root ..\..\SuiteCRM --print-run-id
 ```
 
-Summarize a module to JSON (default output goes to `SuiteCRM/custom/LLMCodeGenerator/code_summary.json`):
+Summarize sources to JSON (writes `SuiteCRM/custom/LLMCodeGenerator/code_summary.json` by default):
 
 ```powershell
 python generate_summary.py --sources ..\..\SuiteCRM\modules\Administration --run-log .\runs\python_runs.jsonl --print-run-id
