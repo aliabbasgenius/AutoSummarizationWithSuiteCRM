@@ -168,19 +168,32 @@ def _validate_function_output(function_name: str, function_text: str) -> None:
         raise ModelOutputError("Model function output is missing braces.")
 
 
+def _extract_php_function_text(text: str, function_name: str) -> str:
+    start, end = _find_php_function_span(text, function_name)
+    return text[start:end]
+
+
+def _this_method_calls(text: str) -> set[str]:
+    return set(re.findall(r"\$this->([A-Za-z_][A-Za-z0-9_]*)\s*\(", text))
+
+
 def _find_php_function_span(text: str, function_name: str) -> tuple[int, int]:
-    # Find the function keyword + name. Allow modifiers like public/static.
+    """Return (start, end) slice for a PHP function definition.
+
+    Important: start must include the visibility/modifiers (e.g. `public static function ...`),
+    otherwise replacing only from the `function` keyword can leave a dangling `public ` token
+    in the original text.
+    """
+
+    # Match at line start to avoid capturing a preceding delimiter.
     m = re.search(
-        rf"(^|[^\w])(?:public\s+|protected\s+|private\s+)?(?:static\s+)?function\s+{re.escape(function_name)}\s*\(",
+        rf"(?im)^\s*(?:public\s+|protected\s+|private\s+)?(?:static\s+)?function\s+{re.escape(function_name)}\s*\(",
         text,
-        flags=re.IGNORECASE,
     )
     if not m:
         raise ValueError(f"Could not find function '{function_name}' in target file.")
 
-    # Start exactly at the 'function' keyword, not at the preceding delimiter.
-    function_kw = text.lower().find("function", m.start(0), m.end(0))
-    start = function_kw if function_kw != -1 else m.start(0)
+    start = m.start(0)
 
     # Find opening brace for the function body.
     brace_open = text.find("{", m.end(0))
@@ -331,6 +344,13 @@ def main() -> int:
     mode_used = args.mode
     function_name = (args.function_name or "").strip()
 
+    original_function_text = ""
+    if function_name:
+        try:
+            original_function_text = _extract_php_function_text(original_text, function_name)
+        except Exception:
+            original_function_text = ""
+
     def full_file_request() -> str:
         system = (
             "You are an expert SuiteCRM engineer. "
@@ -355,15 +375,24 @@ def main() -> int:
             "Do not return the full file. "
             "No markdown fences, no explanations."
         )
+
+        original_calls = sorted(_this_method_calls(original_function_text)) if original_function_text else []
+        calls_hint = "\n".join(f"- {c}()" for c in original_calls)
+
         user = (
             f"Target path (repo-relative): {rel_path}\n"
             f"Function to refactor: {function_name}\n\n"
             f"Instructions:\n{prompt_text.strip()}\n\n"
             + (f"Extra context:\n{extra_context}\n\n" if extra_context else "")
-            + "Current file contents:\n"
-            + original_text
-            + "\n\n"
-            + "Return ONLY the full updated function definition (signature + body)."
+            + "Return ONLY the full updated function definition (signature + body).\n"
+            + "Do NOT include the PHP open tag (<?php).\n"
+            + "Do NOT include the docblock above the function; start at the visibility keyword (e.g. `public function ...`).\n"
+            + "IMPORTANT: You must keep ALL refactor logic inside this single function.\n"
+            + "Do NOT introduce calls to new $this->...() methods.\n"
+            + "You may use local closures/anonymous functions assigned to variables instead of new $this-> methods.\n"
+            + ("Existing $this->method() calls seen in the original function (do not add new ones):\n" + calls_hint + "\n\n" if calls_hint else "")
+            + "Current function contents (full):\n"
+            + (original_function_text if original_function_text else original_text)
         )
         return call_model(system, user)
 
@@ -381,6 +410,18 @@ def main() -> int:
             raise ValueError("--function-name is required for --mode=function")
         function_text = function_only_request()
         _validate_function_output(function_name, function_text)
+
+        # Additional safety checks: ensure we didn't introduce new `$this->...()` calls.
+        if original_function_text:
+            original_calls = _this_method_calls(original_function_text)
+            new_calls = _this_method_calls(function_text)
+            added_calls = sorted(new_calls - original_calls)
+            if added_calls:
+                raise ModelOutputError(
+                    "Model introduced new $this->method() calls not present in original function: "
+                    + ", ".join(added_calls)
+                )
+
         new_text = _replace_php_function(original_text, function_name, function_text)
 
     elapsed = perf_counter() - start

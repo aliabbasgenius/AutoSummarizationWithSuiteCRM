@@ -1,0 +1,25 @@
+Refactor the SuiteCRM Emails module function `email2Send($request)` in `modules/Emails/Email.php`.
+
+GOALS
+- Improve readability and maintainability of the function.
+- Reduce duplication and deep nesting.
+- Keep behavior identical (no functional changes).
+
+HARD REQUIREMENTS
+- Do NOT change the public API: keep the function name, visibility, parameters, and return values the same.
+- Do NOT change business logic, SQL, headers, outbound email behavior, or side effects.
+- Do NOT change database writes, bean linking behavior, or attachment handling behavior.
+- Preserve existing comments where possible.
+- Output must be valid PHP and should pass `php -l`.
+
+REFACTOR GUIDELINES (SAFE)
+- You may rename *local* variables within this function for clarity (function scope only).
+- You may introduce local helper closures inside the function to remove repetition (e.g., shared add-recipient logic for To/Cc/Bcc).
+- Do NOT introduce new helper methods on `$this` (no `$this->newHelper()` calls). Keep everything inside `email2Send()`.
+- You may group code into clear sections with early returns/guard clauses, but must preserve outcomes.
+- Keep the existing conditional flows (draft vs send vs save-to-sugar) semantically identical.
+
+OUTPUT
+Return ONLY the updated `email2Send` function definition (signature + full body).
+- Start at `public function email2Send($request)` (no docblock above it).
+- No markdown, no explanations.
