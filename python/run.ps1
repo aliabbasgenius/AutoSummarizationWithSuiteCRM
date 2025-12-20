@@ -78,7 +78,14 @@ if ($Approach -eq 'autosummary') {
   )
 }
 
-Write-Host "Running: $Approach" -ForegroundColor Cyan
+$runningLine = $(if ($Approach -eq 'raw') {
+  'Running codebase code generator'
+} elseif ($Approach -eq 'autosummary') {
+  'Running auto summarization code generator'
+} else {
+  "Running $Approach"
+})
+Write-Host $runningLine -ForegroundColor Cyan
 Write-Host ($cmd -join ' ')
 
 & $cmd[0] @($cmd[1..($cmd.Length-1)])
