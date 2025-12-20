@@ -18,18 +18,18 @@ Generated artifacts are written into the SuiteCRM working tree by default under:
 
 ## Configuration
 
-Set environment variables (Windows PowerShell):
+Prefer repo-local configuration via `LLMCodeGenerator/.env`:
 
-```powershell
-setx AZURE_OPENAI_ENDPOINT "https://<your-resource>.openai.azure.com/"
-setx AZURE_OPENAI_KEY "<api-key>"
-setx AZURE_OPENAI_DEPLOYMENT "gpt-4o-mini"
-setx AZURE_OPENAI_API_VERSION "2025-01-01-preview"
-setx AZURE_OPENAI_TEMPERATURE "0.2"
-setx AZURE_OPENAI_MAX_TOKENS "1200"
+```dotenv
+AZURE_OPENAI_ENDPOINT=https://<your-resource>.openai.azure.com/
+AZURE_OPENAI_API_KEY=<api-key>
+AZURE_OPENAI_DEPLOYMENT=<deployment-name>
+AZURE_OPENAI_API_VERSION=2025-01-01-preview
+AZURE_OPENAI_TEMPERATURE=0.2
+AZURE_OPENAI_MAX_TOKENS=1200
 ```
 
-Or create `LLMCodeGenerator/.env` with the same values.
+The Python scripts prefer values from `LLMCodeGenerator/.env` over machine/user environment variables.
 
 Note:
 - If you copied a full URL like `.../openai/deployments/<deployment>/chat/completions?...`, set `AZURE_OPENAI_ENDPOINT` to the base resource URL (`https://<resource>.openai.azure.com/`).
@@ -70,6 +70,13 @@ Generate (writes `SuiteCRM/custom/LLMCodeGenerator/generated_code_raw.txt` by de
 python generate_from_codebase.py --sources ..\..\SuiteCRM\include\CleanCSV.php --run-log .\runs\python_runs.jsonl --print-run-id
 ```
 
+Simple wrapper (writes `python/runs/latest_raw.patch` and `python/runs/latest_raw.jsonl`):
+
+```powershell
+cd LLMCodeGenerator\python
+./run.ps1 -Approach raw -Prompt .\tasks\refactor_email2Send_recipients_snippet_only.txt -Sources ..\..\SuiteCRM\modules\Emails\Email.php
+```
+
 Generate into `SuiteCRM/modules/<ModuleName>/...` (creates module folder if missing):
 
 ```powershell
@@ -84,6 +91,20 @@ Generate (writes `SuiteCRM/custom/LLMCodeGenerator/generated_code_autosummary.tx
 
 ```powershell
 python generate_from_codebase_and_auto_summarization.py --sources ..\..\SuiteCRM\include\CleanCSV.php --run-log .\runs\python_runs.jsonl --print-run-id
+```
+
+Simple wrapper (writes `python/runs/latest_autosummary.patch` and `python/runs/latest_autosummary.jsonl`):
+
+```powershell
+cd LLMCodeGenerator\python
+./run.ps1 -Approach autosummary -Prompt .\tasks\refactor_email2Send_recipients_snippet_only.txt -Sources ..\..\SuiteCRM\modules\Emails\Email.php
+```
+
+Clean run artifacts (deletes all files under `python/runs/`):
+
+```powershell
+cd LLMCodeGenerator\python
+./clean_runs.ps1
 ```
 
 Generate into `SuiteCRM/modules/<ModuleName>/...`:
