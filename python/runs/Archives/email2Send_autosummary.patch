@@ -1,0 +1,192 @@
+@@ -1,6 +1,7 @@
+     public function email2Send($request)
+     {
+         global $mod_strings;
+         global $app_strings;
+         global $current_user;
+         global $sugar_config;
+         global $locale;
+         global $timedate;
+         global $beanList;
+         global $beanFiles;
+
++        $isDraft = $this->isDraftEmail($request);
+         $OBCharset = $locale->getPrecedentPreference('default_email_charset');
+         $ie = null;
+
+         /**********************************************************************
+          * Sugar Email PREP
+          */
+         /* preset GUID */
+
+         $orignialId = "";
+         if (!empty($this->id)) {
+             $orignialId = $this->id;
+         } // if
+
+         if (empty($this->id)) {
+             $this->id = create_guid();
+             $this->new_with_id = true;
+         }
+
+         /* satisfy basic HTML email requirements */
+         $this->name = $request['sendSubject'];
+         $this->description_html = '&lt;html&gt;&lt;body&gt;' . $request['sendDescription'] . '&lt;/body&gt;&lt;/html&gt;';
+
+         /**********************************************************************
+          * PHPMAILER PREP
+          */
+         $mail = new SugarPHPMailer();
+         $mail = $this->setMailer($mail, '', $request['fromAccount']);
+         if (empty($mail->Host) && !$isDraft) {
+             $this->status = 'send_error';
+
+             if ($mail->oe->type == 'system') {
+                 echo($app_strings['LBL_EMAIL_ERROR_PREPEND'] . $app_strings['LBL_EMAIL_INVALID_SYSTEM_OUTBOUND']);
+             } else {
+                 echo($app_strings['LBL_EMAIL_ERROR_PREPEND'] . $app_strings['LBL_EMAIL_INVALID_PERSONAL_OUTBOUND']);
+             }
+
+             return false;
+         }
+
+         $subject = $this->name;
+         $mail->Subject = from_html($this->name);
+
+         // work-around legacy code in SugarPHPMailer
+         if ($request['setEditor'] == 1) {
+             $request['description_html'] = $request['sendDescription'];
+             $this->description_html = $request['description_html'];
+         } else {
+             $this->description_html = '';
+             $this->description = $request['sendDescription'];
+         }
+         // end work-around
+
+         if ($isDraft) {
+             if ($this->type != 'draft' && $this->status != 'draft') {
+                 $this->id = create_guid();
+                 $this->new_with_id = true;
+                 $this->date_entered = "";
+             } // if
+             $q1 = "update emails_email_addr_rel set deleted = 1 WHERE email_id = '{$this->id}'";
+             $r1 = $this->db->query($q1);
+         } // if
+
+         if (isset($request['saveDraft'])) {
+             $this->type = 'draft';
+             $this->status = 'draft';
+             $forceSave = true;
+         } else {
+             /* Apply Email Templates */
+             // do not parse email templates if the email is being saved as draft....
+             $toAddresses = $this->email2ParseAddresses($request['sendTo']);
+             $sea = new SugarEmailAddress();
+             $object_arr = array();
+
+             if (isset($request['parent_type']) && !empty($request['parent_type']) &&
+                 isset($request['parent_id']) && !empty($request['parent_id']) &&
+                 in_array($request['parent_type'], ['Accounts', 'Cases', 'Contacts', 'Leads', 'Users', 'Prospects'])) {
+                 if (isset($beanList[$request['parent_type']]) && !empty($beanList[$request['parent_type']])) {
+                     $className = $beanList[$request['parent_type']];
+                     if (isset($beanFiles[$className]) && !empty($beanFiles[$className])) {
+                         if (!class_exists($className)) {
+                             require_once($beanFiles[$className]);
+                         }
+                         $bean = new $className();
+                         $bean->retrieve($request['parent_id']);
+                         $object_arr[$bean->module_dir] = $bean->id;
+                     } // if
+                 } // if
+             }
+             foreach ($toAddresses as $addrMeta) {
+                 $addr = $addrMeta['email'];
+                 $beans = $sea->getBeansByEmailAddress($addr);
+                 foreach ($beans as $bean) {
+                     if (!isset($object_arr[$bean->module_dir])) {
+                         $object_arr[$bean->module_dir] = $bean->id;
+                     }
+                 }
+             }
+
+             /* template parsing */
+             if (empty($object_arr)) {
+                 $object_arr= array('Contacts' => '123');
+             }
+             $object_arr['Users'] = $current_user->id;
+             $this->description_html = EmailTemplate::parse_template($this->description_html, $object_arr);
+             $this->name = EmailTemplate::parse_template($this->name, $object_arr);
+             $this->description = EmailTemplate::parse_template($this->description, $object_arr);
+             $this->description = html_entity_decode((string) $this->description, ENT_COMPAT, 'UTF-8');
+             if ($this->type != 'draft' && $this->status != 'draft') {
+                 $this->id = create_guid();
+                 $this->date_entered = "";
+                 $this->new_with_id = true;
+                 $this->type = 'out';
+                 $this->status = 'sent';
+             }
+         }
+
+         if (isset($request['parent_type']) && empty($request['parent_type']) &&
+             isset($request['parent_id']) && empty($request['parent_id'])) {
+             $this->parent_id = "";
+             $this->parent_type = "";
+         } // if
+
+
+         $mail->Subject = $this->name;
+         $mail = $this->handleBody($mail);
+         $mail->Subject = $this->name;
+         $this->description_html = from_html($this->description_html);
+         $this->description_html = $this->decodeDuringSend($this->description_html);
+         $this->description = $this->decodeDuringSend($this->description);
+
+         /* from account */
+         $replyToAddress = $current_user->emailAddress->getReplyToAddress($current_user, true);
+         $replyToName = "";
+         if (empty($request['fromAccount'])) {
+             $defaults = $current_user->getPreferredEmail();
+             $mail->From = $defaults['email'];
+             isValidEmailAddress($mail->From);
+
+             if ($fromname != '') {
+                 $mail->FromName = html_entity_decode($fromname, ENT_QUOTES);
+             } else {
+                 $mail->FromName = $current_user->name;
+             }
+
+             $mail->Sender = $mail->From;
+             isValidEmailAddress($mail->Sender);
+             $mail->AddAddress($toaddress);
+             $mail->Body = $mod_strings['LBL_TEST_EMAIL_BODY'];
+
+             $return = array();
+
+             if (!$mail->Send()) {
+                 ob_clean();
+                 $return['status'] = false;
+                 $return['errorMessage'] = $app_strings['LBL_EMAIL_ERROR_PREPEND'] . $mail->ErrorInfo;
+                 $return['fullSmtpLog'] = $mail->fullSmtpLog;
+                 return $return;
+             } // if
+             $return['status'] = true;
+
+             return $return;
+         }
+
+         $mail->Sender = $mail->From; /* set Return-Path field in header to reduce spam score in emails sent via Sugar's Email module */
+         isValidEmailAddress($mail->Sender);
+
+         if (!empty($replyToAddress)) {
+             $mail->AddReplyTo($replyToAddress, $locale->translateCharsetMIME(trim($replyToName), 'UTF-8', $OBCharset));
+         } else {
+             $mail->AddReplyTo($mail->From, $locale->translateCharsetMIME(trim($mail->FromName), 'UTF-8', $OBCharset));
+         } // else
+         $emailAddressCollection = array(); // used in linking to beans below
+         // handle to/cc/bcc
+         foreach ($this->email2ParseAddresses($request['sendTo']) as $addr_arr) {
+             if (empty($addr_arr['email'])) {
+                 continue;
+             }
+
+             if (empty($addr_arr['display'])) {

@@ -1,0 +1,18 @@
+diff --git a/include/CleanCSV.php b/include/CleanCSV.php
+--- a/include/CleanCSV.php
++++ b/include/CleanCSV.php
+@@ -50,11 +50,10 @@
+     public function escapeField($cell)
+     {
+         if (empty($cell) || !is_string($cell)) {
+-            return $cell;
++            return $cell; // Early return if not a string or empty
+         }
+ 
+-        if (in_array($cell[0], $this->startingChars, true)) {
+-            return $this->escapeChar . $cell;
+-        }
++        // Escape the field if it starts with a specified character
++        return in_array($cell[0], $this->startingChars, true) ? $this->escapeChar . $cell : $cell;
+     }
+ }
