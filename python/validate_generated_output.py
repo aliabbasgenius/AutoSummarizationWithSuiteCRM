@@ -139,6 +139,48 @@ def validate_text(text: str, suitecrm_root: Path) -> list[Finding]:
     return findings
 
 
+def looks_like_unified_diff(text: str, input_path: Path) -> bool:
+    if input_path.suffix.lower() in {".patch", ".diff"}:
+        return True
+    t = text or ""
+    if re.search(r"(?m)^diff --git ", t):
+        return True
+    if re.search(r"(?m)^--- ", t) and re.search(r"(?m)^\+\+\+ ", t):
+        return True
+    if re.search(r"(?m)^@@ ", t):
+        return True
+    return False
+
+
+def validate_unified_diff(text: str) -> list[Finding]:
+    findings: list[Finding] = []
+    t = text or ""
+
+    has_hunk = bool(re.search(r"(?m)^@@ ", t))
+    has_diff_git = bool(re.search(r"(?m)^diff --git ", t))
+    has_file_headers = bool(re.search(r"(?m)^--- ", t) and re.search(r"(?m)^\+\+\+ ", t))
+
+    if has_hunk and not (has_diff_git or has_file_headers):
+        findings.append(
+            Finding(
+                severity="error",
+                code="patch.missing_headers",
+                message="Looks like a unified diff (has @@ hunks) but is missing diff/file headers (diff --git and/or ---/+++).",
+            )
+        )
+
+    if (t.strip() != "") and (not t.endswith("\n")):
+        findings.append(
+            Finding(
+                severity="warn",
+                code="artifact.missing_trailing_newline",
+                message="Output does not end with a trailing newline.",
+            )
+        )
+
+    return findings
+
+
 def run_php_lint_if_applicable(text: str, input_path: Path, skip: bool) -> Finding | None:
     if skip:
         return None
@@ -201,6 +243,10 @@ def validate_file(
     text = read_text(input_path)
 
     findings = validate_text(text, suitecrm_root)
+
+    if looks_like_unified_diff(text, input_path):
+        findings.extend(validate_unified_diff(text))
+
     lint_finding = run_php_lint_if_applicable(text, input_path, skip=bool(no_php_lint))
     if lint_finding:
         findings.append(lint_finding)
