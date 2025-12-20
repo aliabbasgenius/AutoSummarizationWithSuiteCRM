@@ -1,0 +1,24 @@
+You are refactoring code in SuiteCRM.
+
+Goal: refactor for readability and maintainability ONLY.
+
+Target:
+- File: include/CleanCSV.php
+- Function: escapeField($cell)
+
+Hard constraints:
+- Do NOT change behavior.
+- Do NOT add/remove class methods or functions.
+- Do NOT change any code outside escapeField($cell).
+- Output MUST be a single git-apply compatible unified diff patch.
+- No markdown fences. No explanations.
+
+Unified diff formatting rules (MUST FOLLOW):
+- Start with: diff --git a/<path> b/<path>
+- Include --- a/<path> and +++ b/<path>
+- Include valid @@ hunk headers
+- Inside hunks, EVERY line must begin with exactly one of: space, +, -, or \\.
+  (Even blank context lines must be a single leading space.)
+- End the patch with a newline.
+
+Make a minimal change set: simplify conditions and early-return structure, but keep the same output.

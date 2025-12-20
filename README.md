@@ -74,8 +74,12 @@ Simple wrapper (writes `python/runs/latest_raw.patch` and `python/runs/latest_ra
 
 ```powershell
 cd LLMCodeGenerator\python
-./run.ps1 -Approach raw -Prompt .\tasks\refactor_email2Send_recipients_snippet_only.txt -Sources ..\..\SuiteCRM\modules\Emails\Email.php
+./run.ps1 -Approach raw -Prompt .\tasks\ACTIVE_PROMPT.txt -Sources ..\..\SuiteCRM\include\CleanCSV.php
 ```
+
+Prompt notes:
+- Use `python/tasks/ACTIVE_PROMPT.txt` as the single prompt file for both approaches.
+- Older task prompt `.txt` files are kept under `python/tasks/archive/`.
 
 Generate into `SuiteCRM/modules/<ModuleName>/...` (creates module folder if missing):
 
@@ -97,7 +101,7 @@ Simple wrapper (writes `python/runs/latest_autosummary.patch` and `python/runs/l
 
 ```powershell
 cd LLMCodeGenerator\python
-./run.ps1 -Approach autosummary -Prompt .\tasks\refactor_email2Send_recipients_snippet_only.txt -Sources ..\..\SuiteCRM\modules\Emails\Email.php
+./run.ps1 -Approach autosummary -Prompt .\tasks\ACTIVE_PROMPT.txt -Sources ..\..\SuiteCRM\include\CleanCSV.php
 ```
 
 Clean run artifacts (deletes all files under `python/runs/`):

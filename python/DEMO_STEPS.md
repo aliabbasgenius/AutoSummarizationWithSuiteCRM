@@ -21,7 +21,7 @@ cd D:\Study\Projects\AutoSummarizationProject\LLMCodeGenerator\python
 ## 2) Choose a prompt
 
 Use the demo prompt file:
-- `LLMCodeGenerator/python/tasks/demo_refactor_cleancsv_strict_patch.txt`
+- `LLMCodeGenerator/python/tasks/ACTIVE_PROMPT.txt`
 
 It forces a strict `git apply` compatible unified diff patch.
 
@@ -29,7 +29,7 @@ It forces a strict `git apply` compatible unified diff patch.
 
 ```powershell
 $py = "D:\Study\Projects\AutoSummarizationProject\LLMCodeGenerator\python\.venv\Scripts\python.exe"
-$prompt = ".\tasks\demo_refactor_cleancsv_strict_patch.txt"
+$prompt = ".\tasks\ACTIVE_PROMPT.txt"
 $src = "..\..\SuiteCRM\include\CleanCSV.php"
 
 & $py .\generate_from_codebase.py `
@@ -49,7 +49,7 @@ Expected artifacts:
 
 ```powershell
 $py = "D:\Study\Projects\AutoSummarizationProject\LLMCodeGenerator\python\.venv\Scripts\python.exe"
-$prompt = ".\tasks\demo_refactor_cleancsv_strict_patch.txt"
+$prompt = ".\tasks\ACTIVE_PROMPT.txt"
 $src = "..\..\SuiteCRM\include\CleanCSV.php"
 
 & $py .\generate_from_codebase_and_auto_summarization.py `
