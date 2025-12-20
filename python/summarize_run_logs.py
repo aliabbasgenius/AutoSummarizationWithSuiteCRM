@@ -11,6 +11,7 @@ This script uses only the Python standard library.
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 from typing import Any, Iterable
@@ -91,8 +92,8 @@ def print_csharp(rows: list[dict[str, Any]]) -> None:
     print(f"Avg attempts: {avg(attempts):.2f} | dropped_max_tokens: {dropped_max} | dropped_temperature: {dropped_temp}")
 
 
-def print_python_tools(rows: list[dict[str, Any]]) -> None:
-    print(f"Python tools log: {PY_TOOLS_LOG}")
+def print_python_tools(rows: list[dict[str, Any]], log_path: Path) -> None:
+    print(f"Python tools log: {log_path}")
     print(f"Runs: {len(rows)}")
     if not rows:
         return
@@ -210,13 +211,38 @@ def print_python_tools(rows: list[dict[str, Any]]) -> None:
 
 
 def main() -> int:
+    p = argparse.ArgumentParser(description="Summarize LLMCodeGenerator run logs (JSONL).")
+    p.add_argument(
+        "--input",
+        default="",
+        help=(
+            "Optional path to a python tools JSONL log to summarize (overrides the default python/runs/python_runs.jsonl). "
+            "Use this for custom logs like runs/demo_runs.jsonl."
+        ),
+    )
+    p.add_argument(
+        "--last",
+        type=int,
+        default=0,
+        help="If set, only summarize the last N JSONL rows from the chosen python tools log.",
+    )
+    args = p.parse_args()
+
     py_rows = read_jsonl(PY_AGENT_LOG)
-    py_tool_rows = read_jsonl(PY_TOOLS_LOG)
     cs_rows = read_jsonl(CS_LOG)
+
+    py_tools_log_path = PY_TOOLS_LOG
+    if (args.input or "").strip():
+        candidate = Path(args.input).expanduser()
+        py_tools_log_path = candidate if candidate.is_absolute() else (Path.cwd() / candidate).resolve()
+
+    py_tool_rows = read_jsonl(py_tools_log_path)
+    if args.last and args.last > 0:
+        py_tool_rows = py_tool_rows[-args.last :]
 
     print_python_agent(py_rows)
     print()
-    print_python_tools(py_tool_rows)
+    print_python_tools(py_tool_rows, py_tools_log_path)
     print()
     print_csharp(cs_rows)
     return 0

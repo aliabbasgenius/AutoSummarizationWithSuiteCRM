@@ -53,6 +53,7 @@ from generate_from_codebase import (  # noqa: E402
     load_dotenv_fallback,
     load_text,
     normalize_azure_endpoint,
+    normalize_unified_diff_hunk_counts,
     parse_file_bundle,
     prefer_deployment_from_dotenv,
     repair_file_bundle_json,
@@ -222,15 +223,26 @@ def _safe_read_text(path: Path) -> str:
         return path.read_text(encoding="latin-1", errors="replace")
 
 
-def iter_source_files(paths: list[str]) -> Iterator[Path]:
+def iter_source_files(paths: list[str], *, base_root: Path | None = None) -> Iterator[Path]:
+    """Yield source files from provided paths.
+
+    If a path does not exist relative to the current working directory, and a
+    base_root is provided, we also try resolving it relative to base_root.
+    """
+
     for raw in paths:
         candidate = Path(raw)
+        if not candidate.is_absolute() and not candidate.exists() and base_root is not None:
+            alt = (base_root / candidate).resolve()
+            if alt.exists():
+                candidate = alt
+
         if candidate.is_dir():
             for file_path in sorted(candidate.rglob("*")):
                 if file_path.suffix.lower() in SUPPORTED_EXTENSIONS:
-                    yield file_path
+                    yield file_path.resolve()
         elif candidate.is_file() and candidate.suffix.lower() in SUPPORTED_EXTENSIONS:
-            yield candidate
+            yield candidate.resolve()
 
 
 def _suitecrm_relative_path(file_path: Path, suitecrm_root: Path) -> Path:
@@ -275,20 +287,30 @@ def extract_dependency_hints(source_text: str) -> dict[str, list[str]]:
     }
 
 
-def gather_context(paths: list[str], byte_budget: int) -> str:
+def gather_context(paths: list[str], byte_budget: int, *, base_root: Path | None = None) -> str:
     if not paths or byte_budget <= 0:
         return ""
 
     snippets: list[str] = []
     remaining = byte_budget
 
-    for file_path in iter_source_files(paths):
+    for file_path in iter_source_files(paths, base_root=base_root):
         text = _safe_read_text(file_path)
         encoded = text.encode("utf-8")
         chunk = encoded[:remaining].decode("utf-8", errors="ignore")
+
+        display_path: str
+        if base_root is not None:
+            try:
+                display_path = str(file_path.relative_to(base_root))
+            except Exception:
+                display_path = str(file_path)
+        else:
+            display_path = str(file_path)
+
         snippets.append(
             textwrap.dedent(
-                f"""// file: {file_path}
+                f"""// file: {display_path}
 {chunk}
 """
             ).strip()
@@ -501,8 +523,10 @@ def main() -> int:
     run_id = (args.run_id or "").strip() or str(uuid.uuid4())
     run_started = utc_now_iso()
 
-    suitecrm_root = default_suitecrm_root()
-    source_files = list(iter_source_files(args.sources))
+    suitecrm_root = Path(args.suitecrm_root).expanduser()
+    if not suitecrm_root.is_absolute():
+        suitecrm_root = (Path.cwd() / suitecrm_root).resolve()
+    source_files = list(iter_source_files(args.sources, base_root=suitecrm_root))
 
     summary_text, summary_finish_reason, summary_accepted, summary_usage, summary_elapsed = summarize_modules_hierarchical(
         client=client,
@@ -514,7 +538,7 @@ def main() -> int:
         max_tokens=int(args.summary_max_tokens),
     )
 
-    raw_context = gather_context(args.sources, int(args.max_context_bytes))
+    raw_context = gather_context(args.sources, int(args.max_context_bytes), base_root=suitecrm_root)
     context_parts = ["Auto Summary (hierarchical JSON):\n" + (summary_text or "").strip()]
     if raw_context.strip():
         context_parts.append("Raw Context Snippets (reduced):\n" + raw_context)
@@ -564,7 +588,10 @@ def main() -> int:
     else:
         output_path = Path(args.output).resolve()
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(output_text, encoding="utf-8")
+        normalized_output = normalize_unified_diff_hunk_counts(output_text)
+        if (normalized_output or "").strip() and not normalized_output.endswith("\n"):
+            normalized_output += "\n"
+        output_path.write_text(normalized_output, encoding="utf-8")
 
     if (args.run_log or "").strip():
         run_log_path = Path(args.run_log).expanduser()

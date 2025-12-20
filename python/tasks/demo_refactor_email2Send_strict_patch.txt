@@ -1,0 +1,20 @@
+You are refactoring existing SuiteCRM PHP code.
+
+Goal: refactor ONLY the existing method `Email::email2Send($request)` in `SuiteCRM/modules/Emails/Email.php` to reduce duplication and improve readability, with NO behavior changes.
+
+Hard constraints:
+- Do NOT add, rename, or remove any class methods or properties.
+- Do NOT introduce any new `$this->someNewHelper()` calls.
+- You MAY use local variables and local closures inside `email2Send()`.
+- Do NOT change external interfaces, request keys, global variables, logging, or side effects.
+- Keep all existing business logic and conditionals equivalent.
+
+Output format (very important):
+- Return ONLY a unified diff patch that is compatible with `git apply`.
+- The very first line MUST be: diff --git a/modules/Emails/Email.php b/modules/Emails/Email.php
+- Include unified diff file headers for the same path:
+  - --- a/modules/Emails/Email.php
+  - +++ b/modules/Emails/Email.php
+- Include at least one @@ hunk header.
+- The patch must only change lines within the `email2Send($request)` method.
+- No prose, no markdown fences, no explanations.

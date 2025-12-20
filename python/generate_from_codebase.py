@@ -185,6 +185,66 @@ def strip_markdown_fences(text: str) -> str:
     return stripped
 
 
+_HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+
+
+def normalize_unified_diff_hunk_counts(text: str) -> str:
+    """Fix incorrect hunk line-counts in unified diffs.
+
+    Some models emit valid-looking diffs but with incorrect hunk counts, which
+    causes `git apply` to fail with 'corrupt patch'. We recompute counts from
+    the hunk body and rewrite the @@ header counts.
+    """
+
+    if not text or "@@" not in text:
+        return text
+
+    lines = text.splitlines()
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        m = _HUNK_HEADER_RE.match(line)
+        if not m:
+            out.append(line)
+            i += 1
+            continue
+
+        old_start = m.group(1)
+        new_start = m.group(3)
+
+        # Count hunk body lines until next header or file boundary.
+        old_count = 0
+        new_count = 0
+        j = i + 1
+        while j < len(lines):
+            body = lines[j]
+            if body.startswith("@@") or body.startswith("diff --git ") or body.startswith("--- ") or body.startswith("+++ "):
+                break
+            if body.startswith("\\"):
+                j += 1
+                continue
+            if body.startswith(" "):
+                old_count += 1
+                new_count += 1
+            elif body.startswith("-"):
+                old_count += 1
+            elif body.startswith("+"):
+                new_count += 1
+            else:
+                # Not a valid hunk line; leave as-is.
+                break
+            j += 1
+
+        out.append(f"@@ -{old_start},{old_count} +{new_start},{new_count} @@")
+        i += 1
+        while i < j:
+            out.append(lines[i])
+            i += 1
+
+    return "\n".join(out)
+
+
 def accepted_prediction_tokens_from_usage(usage: Any) -> int | None:
     try:
         completion_details = getattr(usage, "completion_tokens_details", None) if usage else None
@@ -526,35 +586,55 @@ def load_text(path: Path) -> str:
         return path.read_text(encoding="latin-1", errors="replace")
 
 
-def iter_source_files(paths: list[str]) -> Iterator[Path]:
+def iter_source_files(paths: list[str], *, base_root: Path | None = None) -> Iterator[Path]:
+    """Yield source files from provided paths.
+
+    If a path does not exist relative to the current working directory, and a
+    base_root is provided, we also try resolving it relative to base_root.
+    """
+
     for raw in paths:
         candidate = Path(raw)
+        if not candidate.is_absolute() and not candidate.exists() and base_root is not None:
+            alt = (base_root / candidate).resolve()
+            if alt.exists():
+                candidate = alt
+
         if candidate.is_dir():
             for file_path in sorted(candidate.rglob("*")):
                 if file_path.suffix.lower() in SUPPORTED_EXTENSIONS:
-                    yield file_path
+                    yield file_path.resolve()
         elif candidate.is_file() and candidate.suffix.lower() in SUPPORTED_EXTENSIONS:
-            yield candidate
+            yield candidate.resolve()
 
 
-def gather_context(paths: list[str], byte_budget: int) -> str:
+def gather_context(paths: list[str], byte_budget: int, *, base_root: Path | None = None) -> str:
     if not paths or byte_budget <= 0:
         return ""
 
     snippets: list[str] = []
     remaining = byte_budget
 
-    for file_path in iter_source_files(paths):
+    for file_path in iter_source_files(paths, base_root=base_root):
         try:
             text = file_path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             text = file_path.read_text(encoding="latin-1", errors="replace")
 
+        display_path: str
+        if base_root is not None:
+            try:
+                display_path = str(file_path.relative_to(base_root))
+            except Exception:
+                display_path = str(file_path)
+        else:
+            display_path = str(file_path)
+
         encoded = text.encode("utf-8")
         chunk = encoded[:remaining].decode("utf-8", errors="ignore")
         snippets.append(
             textwrap.dedent(
-                f"""// file: {file_path}
+                f"""// file: {display_path}
 {chunk}
 """
             ).strip()
@@ -628,7 +708,17 @@ def main() -> int:
 
         run_started = utc_now_iso()
 
-        context = gather_context(args.sources, int(args.max_context_bytes))
+        # Prefer SuiteCRM-root relative paths in context so generated patches
+        # target repo paths like include/Foo.php instead of filesystem paths.
+        base_root: Path | None = None
+        try:
+            base_root = Path(args.suitecrm_root).expanduser()
+            if not base_root.is_absolute():
+                base_root = (Path.cwd() / base_root).resolve()
+        except Exception:
+            base_root = None
+
+        context = gather_context(args.sources, int(args.max_context_bytes), base_root=base_root)
 
         if extra_context_text:
             context = (extra_context_text + "\n\n" + (context or "").strip()).strip()
@@ -676,7 +766,11 @@ def main() -> int:
             output_path = Path(args.output).resolve()
 
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(output_text, encoding="utf-8")
+            normalized_output = output_text
+            normalized_output = normalize_unified_diff_hunk_counts(normalized_output)
+            if (normalized_output or "").strip() and not normalized_output.endswith("\n"):
+                normalized_output += "\n"
+            output_path.write_text(normalized_output, encoding="utf-8")
 
         if (args.run_log or "").strip():
             run_log_path = Path(args.run_log).expanduser()

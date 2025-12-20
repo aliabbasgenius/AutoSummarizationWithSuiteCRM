@@ -169,6 +169,40 @@ def validate_unified_diff(text: str) -> list[Finding]:
             )
         )
 
+    # Validate that hunk lines have valid prefixes.
+    # In a unified diff, every line inside a hunk must begin with one of:
+    # ' ' (context), '+' (add), '-' (remove), or '\\' (no-newline marker).
+    lines = t.splitlines()
+    in_hunk = False
+    for line in lines:
+        if line.startswith("@@"):
+            in_hunk = True
+            continue
+
+        if in_hunk:
+            # New file header or next file section ends the current hunk context.
+            if line.startswith("diff --git ") or line.startswith("--- ") or line.startswith("+++ "):
+                in_hunk = False
+                continue
+            if line == "":
+                findings.append(
+                    Finding(
+                        severity="error",
+                        code="patch.invalid_hunk_line",
+                        message="Empty line inside a diff hunk; blank context lines must start with a single space.",
+                    )
+                )
+                break
+            if not (line.startswith(" ") or line.startswith("+") or line.startswith("-") or line.startswith("\\")):
+                findings.append(
+                    Finding(
+                        severity="error",
+                        code="patch.invalid_hunk_line",
+                        message=f"Invalid hunk line prefix: {line[:20]!r}",
+                    )
+                )
+                break
+
     if (t.strip() != "") and (not t.endswith("\n")):
         findings.append(
             Finding(
