@@ -42,6 +42,11 @@ if ([string]::IsNullOrWhiteSpace($Output)) {
   $Output = Join-Path $runDir ("latest_{0}.patch" -f $Approach)
 }
 
+# Always overwrite patch outputs (never append/accumulate across runs).
+if (Test-Path $Output) {
+  Remove-Item -Force $Output
+}
+
 $runLog = Join-Path $runDir ("latest_{0}.jsonl" -f $Approach)
 
 $cmd = @(

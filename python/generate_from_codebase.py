@@ -176,12 +176,24 @@ def normalize_azure_endpoint(raw: str) -> str:
 
 def strip_markdown_fences(text: str) -> str:
     stripped = (text or "").strip()
-    if stripped.startswith("```"):
-        lines = stripped.splitlines()
+    if not stripped:
+        return ""
+
+    # Handle fenced blocks like ```diff ... ``` or even ````diff ... ````.
+    fence_re = re.compile(r"^`{3,}.*$")
+    end_fence_re = re.compile(r"^`{3,}\s*$")
+
+    lines = stripped.splitlines()
+    if lines and fence_re.match(lines[0].strip()):
         lines = lines[1:]
-        if lines and lines[-1].strip().startswith("```"):
+        while lines and lines[0].strip() == "":
+            lines = lines[1:]
+        if lines and end_fence_re.match(lines[-1].strip()):
+            lines = lines[:-1]
+        while lines and lines[-1].strip() == "":
             lines = lines[:-1]
         return "\n".join(lines).strip()
+
     return stripped
 
 
@@ -241,6 +253,40 @@ def normalize_unified_diff_hunk_counts(text: str) -> str:
         while i < j:
             out.append(lines[i])
             i += 1
+
+    return "\n".join(out)
+
+
+def normalize_unified_diff_hunk_blank_lines(text: str) -> str:
+    """Replace empty lines inside hunks with a single-space context line.
+
+    Git's unified diff format requires every hunk line to start with ' ', '+',
+    '-', or '\\'. Some model outputs include truly empty lines in hunks, which
+    causes validation and `git apply` to fail.
+    """
+
+    if not text or "@@" not in text:
+        return text
+
+    lines = text.splitlines()
+    out: list[str] = []
+    in_hunk = False
+    for line in lines:
+        if line.startswith("@@"):
+            in_hunk = True
+            out.append(line)
+            continue
+
+        if in_hunk and (line.startswith("diff --git ") or line.startswith("--- ") or line.startswith("+++ ")):
+            in_hunk = False
+            out.append(line)
+            continue
+
+        if in_hunk and line == "":
+            out.append(" ")
+            continue
+
+        out.append(line)
 
     return "\n".join(out)
 
@@ -767,6 +813,7 @@ def main() -> int:
 
             output_path.parent.mkdir(parents=True, exist_ok=True)
             normalized_output = output_text
+            normalized_output = normalize_unified_diff_hunk_blank_lines(normalized_output)
             normalized_output = normalize_unified_diff_hunk_counts(normalized_output)
             if (normalized_output or "").strip() and not normalized_output.endswith("\n"):
                 normalized_output += "\n"

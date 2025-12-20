@@ -1,0 +1,14 @@
+diff --git a/include/CleanCSV.php b/include/CleanCSV.php
+--- a/include/CleanCSV.php
++++ b/include/CleanCSV.php
+@@ -37,9 +37,8 @@
+         if (!is_string($cell) || empty($cell)) {
+             return $cell;
+         }
+-        
+         $isStartingChar = in_array($cell[0], $this->startingChars, true);
+-        
+         return $isStartingChar ? $this->escapeChar . $cell : $cell;
++        return $isStartingChar ? $this->escapeChar . $cell : $cell;        
+     }
+ }
