@@ -10,6 +10,7 @@ import re
 import sys
 import textwrap
 import json
+import difflib
 from datetime import datetime, timezone
 import uuid
 from pathlib import Path
@@ -195,6 +196,173 @@ def strip_markdown_fences(text: str) -> str:
         return "\n".join(lines).strip()
 
     return stripped
+
+
+def looks_like_unified_diff(text: str) -> bool:
+    t = (text or "").lstrip()
+    if not t:
+        return False
+    if t.startswith("diff --git "):
+        return True
+    if t.startswith("--- ") and "\n+++ " in t:
+        return True
+    return False
+
+
+def infer_target_function_name(prompt_text: str) -> str | None:
+    p = prompt_text or ""
+    if "getProductsServicesPurchasedQuery" in p:
+        return "getProductsServicesPurchasedQuery"
+    m = re.search(r"(?i)\bfunction\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", p)
+    if m:
+        return m.group(1)
+    m = re.search(r"(?i)\bmethod\s+([A-Za-z_][A-Za-z0-9_]*)\b", p)
+    if m:
+        return m.group(1)
+    return None
+
+
+def find_php_function_span(text: str, function_name: str) -> tuple[int, int]:
+    m = re.search(
+        rf"(?im)^\s*(?:public\s+|protected\s+|private\s+)?(?:static\s+)?function\s+{re.escape(function_name)}\s*\(",
+        text,
+    )
+    if not m:
+        raise ValueError(f"Could not find function '{function_name}' in target file.")
+
+    start = m.start(0)
+    brace_open = text.find("{", m.end(0))
+    if brace_open == -1:
+        raise ValueError(f"Could not find opening '{{' for function '{function_name}'.")
+
+    i = brace_open
+    depth = 0
+    in_sq = False
+    in_dq = False
+    in_line_comment = False
+    in_block_comment = False
+    escape = False
+
+    while i < len(text):
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < len(text) else ""
+
+        if in_line_comment:
+            if ch == "\n":
+                in_line_comment = False
+            i += 1
+            continue
+        if in_block_comment:
+            if ch == "*" and nxt == "/":
+                in_block_comment = False
+                i += 2
+                continue
+            i += 1
+            continue
+
+        if in_sq:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == "'":
+                in_sq = False
+            i += 1
+            continue
+        if in_dq:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_dq = False
+            i += 1
+            continue
+
+        if ch == "/" and nxt == "/":
+            in_line_comment = True
+            i += 2
+            continue
+        if ch == "#":
+            in_line_comment = True
+            i += 1
+            continue
+        if ch == "/" and nxt == "*":
+            in_block_comment = True
+            i += 2
+            continue
+
+        if ch == "'":
+            in_sq = True
+            i += 1
+            continue
+        if ch == '"':
+            in_dq = True
+            i += 1
+            continue
+
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return start, i + 1
+
+        i += 1
+
+    raise ValueError(f"Could not find end of function '{function_name}'.")
+
+
+def extract_php_function_text(text: str, function_name: str) -> str:
+    start, end = find_php_function_span(text, function_name)
+    return text[start:end]
+
+
+def build_patch_from_function_output(
+    suitecrm_root: Path,
+    target_path: Path,
+    function_name: str,
+    function_output: str,
+) -> str:
+    original_text = target_path.read_text(encoding="utf-8", errors="replace")
+    target_newline = "\r\n" if "\r\n" in original_text else "\n"
+
+    output_text = strip_markdown_fences(function_output)
+    output_text = output_text.replace("\r\n", "\n").replace("\r", "\n")
+
+    new_func = extract_php_function_text(output_text, function_name)
+
+    old_start, old_end = find_php_function_span(original_text, function_name)
+    old_func = original_text[old_start:old_end]
+    old_first_line = old_func.splitlines()[0] if old_func else ""
+    old_indent = re.match(r"^[\t ]*", old_first_line).group(0) if old_first_line else ""
+
+    # Normalize indentation of model output to match the original method indent.
+    new_lines = new_func.splitlines()
+    non_empty = [ln for ln in new_lines if ln.strip()]
+    if non_empty:
+        min_ws = min(len(re.match(r"^[\t ]*", ln).group(0)) for ln in non_empty)
+        normalized_lines: list[str] = []
+        for ln in new_lines:
+            if ln.strip():
+                normalized_lines.append(old_indent + ln[min_ws:])
+            else:
+                normalized_lines.append("")
+        new_func = "\n".join(normalized_lines)
+
+    new_func = new_func.replace("\n", target_newline)
+
+    updated_text = original_text[:old_start] + new_func + original_text[old_end:]
+    rel_path = target_path.resolve().relative_to(suitecrm_root.resolve()).as_posix()
+
+    diff_lines = difflib.unified_diff(
+        original_text.splitlines(True),
+        updated_text.splitlines(True),
+        fromfile=f"a/{rel_path}",
+        tofile=f"b/{rel_path}",
+        n=3,
+    )
+    return "".join(diff_lines)
 
 
 _HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -813,11 +981,32 @@ def main() -> int:
 
             output_path.parent.mkdir(parents=True, exist_ok=True)
             normalized_output = output_text
-            normalized_output = normalize_unified_diff_hunk_blank_lines(normalized_output)
-            normalized_output = normalize_unified_diff_hunk_counts(normalized_output)
+
+            generated_locally = False
+            if not looks_like_unified_diff(normalized_output):
+                function_name = infer_target_function_name(prompt_text)
+                if function_name and args.sources:
+                    suitecrm_root = Path(args.suitecrm_root).expanduser()
+                    if not suitecrm_root.is_absolute():
+                        suitecrm_root = (Path.cwd() / suitecrm_root).resolve()
+                    target_path = Path(args.sources[0]).expanduser()
+                    if not target_path.is_absolute():
+                        target_path = (Path.cwd() / target_path).resolve()
+
+                    normalized_output = build_patch_from_function_output(
+                        suitecrm_root=suitecrm_root,
+                        target_path=target_path,
+                        function_name=function_name,
+                        function_output=normalized_output,
+                    )
+                    generated_locally = True
+
+            if not generated_locally:
+                normalized_output = normalize_unified_diff_hunk_blank_lines(normalized_output)
+                normalized_output = normalize_unified_diff_hunk_counts(normalized_output)
             if (normalized_output or "").strip() and not normalized_output.endswith("\n"):
                 normalized_output += "\n"
-            output_path.write_text(normalized_output, encoding="utf-8")
+            output_path.write_text(normalized_output, encoding="utf-8", newline="")
 
         if (args.run_log or "").strip():
             run_log_path = Path(args.run_log).expanduser()

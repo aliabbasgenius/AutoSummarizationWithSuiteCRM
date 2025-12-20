@@ -31,7 +31,7 @@ Requirements (MUST FOLLOW):
    - Calling getProductsServicesPurchasedQuery() with no arguments must produce the same query behavior as today.
 2) Signature:
    - Change the signature to:
-    public function getProductsServicesPurchasedQuery($stages = array('Closed Accepted'), $limit = null)
+     public function getProductsServicesPurchasedQuery($stages = ['Closed Accepted'], $limit = null)
 3) Stage filtering:
    - If $stages is a non-empty array, filter using:
      aos_quotes.stage IN (<comma-separated quoted stages>)
@@ -45,25 +45,19 @@ Requirements (MUST FOLLOW):
 5) Keep the existing joins and the deleted=0 conditions unchanged.
 6) Keep returning a SQL string.
 
-Output constraints for correctness:
-- Your output MUST be ONLY the complete updated PHP method (signature + body), not a diff.
-- The resulting file must contain exactly ONE declaration of getProductsServicesPurchasedQuery.
-- Do not introduce $stages or $limit usage without also updating the signature.
-- Do not add any new functions or closures.
-
-Implementation guidance (recommended):
-- Use a local variable $stageCondition string.
-- Default: $stageCondition = "aos_quotes.stage LIKE 'Closed Accepted'";
-- If stages provided: build $quotedStages with a foreach loop (no arrow functions), then $stageCondition = 'aos_quotes.stage IN (' . implode(',', $quotedStages) . ')';
-- Append LIMIT using: if ($limit !== null && (int)$limit > 0) { $query .= ' LIMIT ' . (int)$limit; }
-
 Hard constraints:
 - Do NOT change any other method.
 - Do NOT change any other file.
 - Do NOT define a function inside a function.
-- Output MUST be the PHP method only (no surrounding text).
+- Output MUST be a single git-apply compatible unified diff patch.
 - No markdown fences. No explanations.
 
-Formatting rules:
-- Output exactly one PHP method definition.
-- Keep the SQL behavior identical when called with no args.
+Unified diff formatting rules (MUST FOLLOW):
+- Start with: diff --git a/<path> b/<path>
+- Include --- a/<path> and +++ b/<path>
+- Include valid @@ hunk headers
+- Inside hunks, EVERY line must begin with exactly one of: space, +, -, or \\.
+  (Even blank context lines must be a single leading space.)
+- End the patch with a newline.
+
+Make a minimal change set: only modify getProductsServicesPurchasedQuery() to implement the feature.

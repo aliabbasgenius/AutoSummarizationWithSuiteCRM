@@ -1,39 +1,44 @@
-diff --git a/modules/Accounts/Account.php b/modules/Accounts/Account.php
-index 7c43904e8..239f049c7 100755
 --- a/modules/Accounts/Account.php
 +++ b/modules/Accounts/Account.php
-@@ -383,19 +383,32 @@ class Account extends Company implements EmailInterface
+@@ -383,19 +383,32 @@
       * Create a query string for select Products/Services Purchased list from database.
       * @return string final query
       */
 -    public function getProductsServicesPurchasedQuery()
-+    public function getProductsServicesPurchasedQuery($stages = ['Closed Accepted'], $limit = null)
++    public function getProductsServicesPurchasedQuery($stages = array('Closed Accepted'), $limit = null)
      {
          $idQuoted = $this->db->quoted($this->id);
- 
 +        $stageCondition = "aos_quotes.stage LIKE 'Closed Accepted'";
-+        if (is_array($stages) && !empty($stages)) {
-+            $quotedStages = array_map(
-+                fn($stage) => $this->db->quoted($stage),
-+                $stages
-+            );
++
++        if (!empty($stages)) {
++            $quotedStages = array();
++            foreach ($stages as $stage) {
++                $quotedStages[] = $this->db->quoted($stage);
++            }
 +            $stageCondition = 'aos_quotes.stage IN (' . implode(',', $quotedStages) . ')';
 +        }
-+
-         $query = "
- 			SELECT
- 				aos_products_quotes.*
- 			FROM
- 				aos_products_quotes
--			JOIN aos_quotes ON aos_quotes.id = aos_products_quotes.parent_id AND aos_quotes.stage LIKE 'Closed Accepted' AND aos_quotes.deleted = 0 AND aos_products_quotes.deleted = 0
-+			JOIN aos_quotes ON aos_quotes.id = aos_products_quotes.parent_id AND $stageCondition AND aos_quotes.deleted = 0 AND aos_products_quotes.deleted = 0
- 			JOIN accounts ON accounts.id = aos_quotes.billing_account_id AND accounts.id = $idQuoted
  
- 			";
+         $query = "
+-			SELECT
+-				aos_products_quotes.*
+-			FROM
+-				aos_products_quotes
+-			JOIN aos_quotes ON aos_quotes.id = aos_products_quotes.parent_id AND aos_quotes.stage LIKE 'Closed Accepted' AND aos_quotes.deleted = 0 AND aos_products_quotes.deleted = 0
+-			JOIN accounts ON accounts.id = aos_quotes.billing_account_id AND accounts.id = $idQuoted
+-
+-			";
++            SELECT
++                aos_products_quotes.*
++            FROM
++                aos_products_quotes
++            JOIN aos_quotes ON aos_quotes.id = aos_products_quotes.parent_id AND $stageCondition AND aos_quotes.deleted = 0 AND aos_products_quotes.deleted = 0
++            JOIN accounts ON accounts.id = aos_quotes.billing_account_id AND accounts.id = $idQuoted
++        ";
 +
 +        if ($limit !== null && (int)$limit > 0) {
 +            $query .= ' LIMIT ' . (int)$limit;
 +        }
++
          return $query;
      }
  }

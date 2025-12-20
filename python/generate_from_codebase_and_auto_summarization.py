@@ -49,9 +49,12 @@ from generate_from_codebase import (  # noqa: E402
     OUTPUT_MODE_TEXT,
     SUPPORTED_EXTENSIONS,
     append_jsonl,
+    build_patch_from_function_output,
     default_suitecrm_root,
+    infer_target_function_name,
     load_dotenv_fallback,
     load_text,
+    looks_like_unified_diff,
     normalize_azure_endpoint,
     normalize_unified_diff_hunk_counts,
     parse_file_bundle,
@@ -588,10 +591,32 @@ def main() -> int:
     else:
         output_path = Path(args.output).resolve()
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        normalized_output = normalize_unified_diff_hunk_counts(output_text)
+        normalized_output = output_text
+
+        generated_locally = False
+        if not looks_like_unified_diff(normalized_output):
+            function_name = infer_target_function_name(prompt_text)
+            if function_name and args.sources:
+                suitecrm_root = Path(args.suitecrm_root).expanduser()
+                if not suitecrm_root.is_absolute():
+                    suitecrm_root = (Path.cwd() / suitecrm_root).resolve()
+                target_path = Path(args.sources[0]).expanduser()
+                if not target_path.is_absolute():
+                    target_path = (Path.cwd() / target_path).resolve()
+
+                normalized_output = build_patch_from_function_output(
+                    suitecrm_root=suitecrm_root,
+                    target_path=target_path,
+                    function_name=function_name,
+                    function_output=normalized_output,
+                )
+                generated_locally = True
+
+        if not generated_locally:
+            normalized_output = normalize_unified_diff_hunk_counts(normalized_output)
         if (normalized_output or "").strip() and not normalized_output.endswith("\n"):
             normalized_output += "\n"
-        output_path.write_text(normalized_output, encoding="utf-8")
+        output_path.write_text(normalized_output, encoding="utf-8", newline="")
 
     if (args.run_log or "").strip():
         run_log_path = Path(args.run_log).expanduser()
