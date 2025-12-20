@@ -90,15 +90,24 @@ def _read_dotenv_value(key: str) -> str | None:
 
 
 def prefer_deployment_from_dotenv() -> None:
-    """Prefer AZURE_OPENAI_DEPLOYMENT from .env over machine/user env vars.
+    """Prefer Azure OpenAI settings from repo-local .env over machine/user env vars.
 
-    This avoids stale `setx AZURE_OPENAI_DEPLOYMENT ...` values overriding the
-    intended repo-local deployment.
+    This avoids stale `setx ...` values overriding the intended repo-local
+    configuration.
+
+    Note: CLI args still take precedence over environment variables.
     """
 
-    value = _read_dotenv_value("AZURE_OPENAI_DEPLOYMENT")
-    if value:
-        os.environ["AZURE_OPENAI_DEPLOYMENT"] = value
+    # Keep AZURE_OPENAI_KEY and AZURE_OPENAI_API_KEY in sync.
+    api_key = _read_dotenv_value("AZURE_OPENAI_API_KEY") or _read_dotenv_value("AZURE_OPENAI_KEY")
+    if api_key:
+        os.environ["AZURE_OPENAI_API_KEY"] = api_key
+        os.environ["AZURE_OPENAI_KEY"] = api_key
+
+    for key in ("AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_DEPLOYMENT", "AZURE_OPENAI_API_VERSION"):
+        value = _read_dotenv_value(key)
+        if value:
+            os.environ[key] = value
 
 
 def default_suitecrm_root() -> Path:
@@ -762,7 +771,20 @@ def main() -> int:
 
         return run_id, output_path, written_files, elapsed
 
-    run_id, output_path, written_files, elapsed = run_one()
+    try:
+        run_id, output_path, written_files, elapsed = run_one()
+    except Exception as exc:  # pragma: no cover - CLI diagnostics
+        message = str(exc)
+        if "DeploymentNotFound" in message or "deployment for this resource does not exist" in message:
+            raise RuntimeError(
+                "Azure OpenAI deployment not found for the configured resource.\n"
+                f"endpoint={args.endpoint}\n"
+                f"deployment={args.deployment}\n"
+                f"api_version={args.api_version}\n\n"
+                "Fix: In Azure Portal for this *same* Azure OpenAI resource, open Deployments and copy the exact *deployment name* "
+                "(not the model name), then set AZURE_OPENAI_DEPLOYMENT to that value."
+            ) from exc
+        raise
     if args.output_mode == OUTPUT_MODE_MODULE:
         print(f"Generated module files: {len(written_files or [])}")
     else:

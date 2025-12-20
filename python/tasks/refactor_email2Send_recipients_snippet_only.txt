@@ -1,0 +1,19 @@
+You are refactoring existing SuiteCRM PHP code.
+
+You are given the exact current recipient-handling snippet from `Email::email2Send($request)` in an extra context file.
+
+Task:
+- Produce a replacement snippet that removes duplication between the To/Cc/Bcc loops by introducing ONE local closure and then calling it 3 times.
+- Preserve exact behavior.
+
+Hard constraints:
+- Do NOT introduce any new `$this->...()` calls.
+- Do NOT change any code outside this snippet.
+- Do NOT add imports.
+- Do NOT use placeholders like `...` or "existing code".
+
+Output format:
+- Output ONLY the replacement snippet code.
+- The replacement must start with: `        $emailAddressCollection = array(); // used in linking to beans below`
+- The replacement must end with the closing brace of the Bcc loop replacement section.
+- No prose, no markdown, no diff headers.
