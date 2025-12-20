@@ -1,15 +1,54 @@
-You are refactoring code in SuiteCRM.
+You are editing code in SuiteCRM.
 
-Goal: refactor for readability and maintainability ONLY.
+Goal: add a small, testable improvement.
 
 Target:
-- File: include/CleanCSV.php
-- Function: escapeField($cell)
+- File: modules/Accounts/Account.php
+- Method: getProductsServicesPurchasedQuery()
+
+Feature request:
+- Make the “Products/Services Purchased” query configurable by allowing optional filtering by quote stage(s) and an optional result limit.
+
+Current method implementation (this is the exact code in the repo today):
+    public function getProductsServicesPurchasedQuery()
+    {
+        $idQuoted = $this->db->quoted($this->id);
+
+        $query = "
+			SELECT
+				aos_products_quotes.*
+			FROM
+				aos_products_quotes
+			JOIN aos_quotes ON aos_quotes.id = aos_products_quotes.parent_id AND aos_quotes.stage LIKE 'Closed Accepted' AND aos_quotes.deleted = 0 AND aos_products_quotes.deleted = 0
+			JOIN accounts ON accounts.id = aos_quotes.billing_account_id AND accounts.id = $idQuoted
+
+			";
+        return $query;
+    }
+
+Requirements (MUST FOLLOW):
+1) Backward compatibility:
+   - Calling getProductsServicesPurchasedQuery() with no arguments must produce the same query behavior as today.
+2) Signature:
+   - Change the signature to:
+     public function getProductsServicesPurchasedQuery($stages = ['Closed Accepted'], $limit = null)
+3) Stage filtering:
+   - If $stages is a non-empty array, filter using:
+     aos_quotes.stage IN (<comma-separated quoted stages>)
+   - Each stage value must be quoted using $this->db->quoted($stage).
+   - If $stages is empty, use the existing default stage filter:
+     aos_quotes.stage LIKE 'Closed Accepted'
+   - Do NOT add any extra WHERE clause (no “WHERE 1=1”). Keep the filter in the existing JOIN condition.
+4) Limit:
+   - If $limit is provided and > 0, append: LIMIT <limit>
+   - $limit must be cast to int.
+5) Keep the existing joins and the deleted=0 conditions unchanged.
+6) Keep returning a SQL string.
 
 Hard constraints:
-- Do NOT change behavior.
-- Do NOT add/remove class methods or functions.
-- Do NOT change any code outside escapeField($cell).
+- Do NOT change any other method.
+- Do NOT change any other file.
+- Do NOT define a function inside a function.
 - Output MUST be a single git-apply compatible unified diff patch.
 - No markdown fences. No explanations.
 
@@ -21,4 +60,4 @@ Unified diff formatting rules (MUST FOLLOW):
   (Even blank context lines must be a single leading space.)
 - End the patch with a newline.
 
-Make a minimal change set: simplify conditions and early-return structure, but keep the same output.
+Make a minimal change set: only modify getProductsServicesPurchasedQuery() to implement the feature.
