@@ -1,0 +1,10 @@
+{
+  "input": "D:\\Study\\Projects\\AutoSummarizationProject\\LLMCodeGenerator\\python\\runs\\demo_autosummarization.patch",
+  "suitecrm_root": "D:\\Study\\Projects\\AutoSummarizationProject\\SuiteCRM",
+  "findings": [],
+  "counts": {
+    "error": 0,
+    "warn": 0,
+    "info": 0
+  }
+}

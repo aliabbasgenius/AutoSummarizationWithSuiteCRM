@@ -10,7 +10,7 @@ param(
   [string]$Variant = 'demo',
 
   # What to do.
-  [ValidateSet('check','apply','revert','status')]
+  [ValidateSet('check','apply','compile','revert','status')]
   [string]$Action = 'apply',
 
   # SuiteCRM repo root.
@@ -80,6 +80,36 @@ if ($Action -eq 'apply') {
   git -C $suite apply --check $patch
   git -C $suite apply $patch
   git -C $suite status --porcelain
+  exit 0
+}
+
+if ($Action -eq 'compile') {
+  $files = Get-PatchedFilesFromPatch $patch
+  if (-not $files -or $files.Count -eq 0) {
+    throw "Could not find any file paths in patch: $patch"
+  }
+
+  $phpCmd = Get-Command php -ErrorAction SilentlyContinue
+  if (-not $phpCmd) {
+    Write-Host "SKIP: php not found in PATH; cannot run php -l" -ForegroundColor Yellow
+  } else {
+    foreach ($f in $files) {
+      if ($f.ToLowerInvariant().EndsWith('.php')) {
+        $full = Join-Path $suite $f
+        Write-Host "php -l $full" -ForegroundColor Cyan
+        php -l $full
+      }
+    }
+  }
+
+  $composerCmd = Get-Command composer -ErrorAction SilentlyContinue
+  if (-not $composerCmd) {
+    Write-Host "SKIP: composer not found in PATH; cannot run composer validate" -ForegroundColor Yellow
+  } else {
+    Write-Host "composer validate (SuiteCRM)" -ForegroundColor Cyan
+    composer -d $suite validate
+  }
+
   exit 0
 }
 
