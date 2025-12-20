@@ -35,14 +35,14 @@ $src = "..\..\SuiteCRM\include\CleanCSV.php"
 & $py .\generate_from_codebase.py `
   --prompt $prompt `
   --sources $src `
-  --output .\runs\demo_raw.patch `
+  --output .\runs\demo_codebase.patch `
   --run-log .\runs\demo_runs.jsonl `
   --validate --suitecrm-root ..\..\SuiteCRM --no-php-lint `
   --print-run-id
 ```
 
 Expected artifacts:
-- `LLMCodeGenerator/python/runs/demo_raw.patch`
+- `LLMCodeGenerator/python/runs/demo_codebase.patch`
 - `LLMCodeGenerator/python/runs/demo_runs.jsonl` (contains generation record + validation record)
 
 ## 4) Run Approach B: AUTOSUMMARY (summarize → aggregate → generate)
@@ -55,7 +55,7 @@ $src = "..\..\SuiteCRM\include\CleanCSV.php"
 & $py .\generate_from_codebase_and_auto_summarization.py `
   --prompt $prompt `
   --sources $src `
-  --output .\runs\demo_autosummary.patch `
+  --output .\runs\demo_autosummarization.patch `
   --run-log .\runs\demo_runs.jsonl `
   --validate --suitecrm-root ..\..\SuiteCRM --no-php-lint `
   --summary-temperature 0 --summary-max-tokens 700 `
@@ -63,7 +63,7 @@ $src = "..\..\SuiteCRM\include\CleanCSV.php"
 ```
 
 Expected artifacts:
-- `LLMCodeGenerator/python/runs/demo_autosummary.patch`
+- `LLMCodeGenerator/python/runs/demo_autosummarization.patch`
 - `LLMCodeGenerator/python/runs/demo_runs.jsonl` (contains generation record + validation record)
 
 ## 5) Manual validation (presentation-friendly)
@@ -75,25 +75,23 @@ Re-run explicitly if you want to show it:
 ```powershell
 $py = "D:\Study\Projects\AutoSummarizationProject\LLMCodeGenerator\python\.venv\Scripts\python.exe"
 $suite = "D:\Study\Projects\AutoSummarizationProject\SuiteCRM"
-
-& $py .\validate_generated_output.py --input .\runs\demo_raw.patch --suitecrm-root $suite --no-php-lint
-& $py .\validate_generated_output.py --input .\runs\demo_autosummary.patch --suitecrm-root $suite --no-php-lint
+& $py .\validate_generated_output.py --input .\runs\demo_codebase.patch --suitecrm-root $suite --no-php-lint
+& $py .\validate_generated_output.py --input .\runs\demo_autosummarization.patch --suitecrm-root $suite --no-php-lint
 ```
 
 ### 5.2 Check patches apply cleanly (no changes made)
 
 ```powershell
 $repo = "D:\Study\Projects\AutoSummarizationProject\SuiteCRM"
-
-git -C $repo apply --check "D:\Study\Projects\AutoSummarizationProject\LLMCodeGenerator\python\runs\demo_raw.patch"
-git -C $repo apply --check "D:\Study\Projects\AutoSummarizationProject\LLMCodeGenerator\python\runs\demo_autosummary.patch"
+git -C $repo apply --check "D:\Study\Projects\AutoSummarizationProject\LLMCodeGenerator\python\runs\demo_codebase.patch"
+git -C $repo apply --check "D:\Study\Projects\AutoSummarizationProject\LLMCodeGenerator\python\runs\demo_autosummarization.patch"
 ```
 
 ### 5.3 (Optional) Apply patch + PHP lint + revert
 
 ```powershell
 $repo = "D:\Study\Projects\AutoSummarizationProject\SuiteCRM"
-$patch = "D:\Study\Projects\AutoSummarizationProject\LLMCodeGenerator\python\runs\demo_raw.patch"
+$patch = "D:\Study\Projects\AutoSummarizationProject\LLMCodeGenerator\python\runs\demo_codebase.patch"
 
 git -C $repo apply $patch
 php -l "$repo\include\CleanCSV.php"

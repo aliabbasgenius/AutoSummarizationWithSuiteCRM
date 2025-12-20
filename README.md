@@ -70,7 +70,7 @@ Generate (writes `SuiteCRM/custom/LLMCodeGenerator/generated_code_raw.txt` by de
 python generate_from_codebase.py --sources ..\..\SuiteCRM\include\CleanCSV.php --run-log .\runs\python_runs.jsonl --print-run-id
 ```
 
-Simple wrapper (writes `python/runs/latest_raw.patch` and `python/runs/latest_raw.jsonl`):
+Simple wrapper (writes `python/runs/latest_codebase.patch` and `python/runs/latest_codebase.jsonl`):
 
 ```powershell
 cd LLMCodeGenerator\python
@@ -97,7 +97,7 @@ Generate (writes `SuiteCRM/custom/LLMCodeGenerator/generated_code_autosummary.tx
 python generate_from_codebase_and_auto_summarization.py --sources ..\..\SuiteCRM\include\CleanCSV.php --run-log .\runs\python_runs.jsonl --print-run-id
 ```
 
-Simple wrapper (writes `python/runs/latest_autosummary.patch` and `python/runs/latest_autosummary.jsonl`):
+Simple wrapper (writes `python/runs/latest_autosummarization.patch` and `python/runs/latest_autosummarization.jsonl`):
 
 ```powershell
 cd LLMCodeGenerator\python

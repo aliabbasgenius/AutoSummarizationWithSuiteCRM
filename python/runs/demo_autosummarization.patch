@@ -1,0 +1,21 @@
+diff --git a/include/CleanCSV.php b/include/CleanCSV.php
+--- a/include/CleanCSV.php
++++ b/include/CleanCSV.php
+@@ -33,11 +33,7 @@
+     public function escapeField($cell)
+     {
+         if (is_string($cell) && !empty($cell) && in_array($cell[0], $this->startingChars, true)) {
+-            return $this->escapeChar . $cell;
+-        }
+ 
+-        return $cell;
++            return $this->escapeChar . $cell;        
++        } 
+         
+-        if (!is_string($cell) || empty($cell)) {
+-            return $cell;
+-        }
+
+         return $cell;
+     }
+\ No newline at end of file

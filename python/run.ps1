@@ -39,7 +39,8 @@ if (-not (Test-Path $runDir)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($Output)) {
-  $Output = Join-Path $runDir ("latest_{0}.patch" -f $Approach)
+  $suffix = $(if ($Approach -eq 'raw') { 'codebase' } else { 'autosummarization' })
+  $Output = Join-Path $runDir ("latest_{0}.patch" -f $suffix)
 }
 
 # Always overwrite patch outputs (never append/accumulate across runs).
@@ -47,7 +48,8 @@ if (Test-Path $Output) {
   Remove-Item -Force $Output
 }
 
-$runLog = Join-Path $runDir ("latest_{0}.jsonl" -f $Approach)
+$runLogSuffix = $(if ($Approach -eq 'raw') { 'codebase' } else { 'autosummarization' })
+$runLog = Join-Path $runDir ("latest_{0}.jsonl" -f $runLogSuffix)
 
 $cmd = @(
   $pythonExe,

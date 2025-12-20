@@ -37,13 +37,13 @@ AzureOpenAICodeGen/runs/
 
 # Allow committing specific demo artifacts under python/runs/
 !python/runs/
-!python/runs/demo_autosummary.patch
-!python/runs/demo_raw.patch
+!python/runs/demo_codebase.patch
+!python/runs/demo_autosummarization.patch
 !python/runs/demo_runs.jsonl
-!python/runs/latest_autosummary.jsonl
-!python/runs/latest_autosummary.patch
-!python/runs/latest_raw.jsonl
-!python/runs/latest_raw.patch
+!python/runs/latest_codebase.jsonl
+!python/runs/latest_codebase.patch
+!python/runs/latest_autosummarization.jsonl
+!python/runs/latest_autosummarization.patch
 
 # Generated artifacts
 generated_code*.txt
