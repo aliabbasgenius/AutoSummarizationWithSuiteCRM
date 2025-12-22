@@ -1,16 +1,16 @@
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet('codebase','autosummarization')]
+  [ValidateSet('codebase', 'autosummarization')]
   [string]$Approach,
 
   # Which patch filename pattern to use.
   # - demo: runs/demo_<approach>.patch
   # - latest: runs/latest_<approach>.patch
-  [ValidateSet('demo','latest')]
+  [ValidateSet('demo', 'latest')]
   [string]$Variant = 'demo',
 
   # What to do.
-  [ValidateSet('check','apply','compile','revert','status')]
+  [ValidateSet('check', 'apply', 'compile', 'revert', 'status')]
   [string]$Action = 'apply',
 
   # SuiteCRM repo root.
@@ -89,25 +89,57 @@ if ($Action -eq 'compile') {
     throw "Could not find any file paths in patch: $patch"
   }
 
+  $phpExe = $null
   $phpCmd = Get-Command php -ErrorAction SilentlyContinue
-  if (-not $phpCmd) {
-    Write-Host "SKIP: php not found in PATH; cannot run php -l" -ForegroundColor Yellow
-  } else {
+  if ($phpCmd) {
+    $phpExe = $phpCmd.Source
+  }
+  else {
+    $portablePhp = Join-Path $scriptRoot '..\\..\\tools\\php81\\php.exe'
+    try {
+      $resolvedPhp = Resolve-Path -LiteralPath $portablePhp -ErrorAction Stop
+      $phpExe = $resolvedPhp.Path
+    }
+    catch {
+      $phpExe = $null
+    }
+  }
+
+  if (-not $phpExe) {
+    Write-Host "SKIP: php not available; cannot run php -l" -ForegroundColor Yellow
+  }
+  else {
     foreach ($f in $files) {
       if ($f.ToLowerInvariant().EndsWith('.php')) {
         $full = Join-Path $suite $f
         Write-Host "php -l $full" -ForegroundColor Cyan
-        php -l $full
+        & $phpExe -l $full
       }
     }
   }
 
   $composerCmd = Get-Command composer -ErrorAction SilentlyContinue
-  if (-not $composerCmd) {
-    Write-Host "SKIP: composer not found in PATH; cannot run composer validate" -ForegroundColor Yellow
-  } else {
+  $composerHandled = $false
+  if ($composerCmd) {
     Write-Host "composer validate (SuiteCRM)" -ForegroundColor Cyan
-    composer -d $suite validate
+    & $composerCmd.Source -d $suite validate
+    $composerHandled = $true
+  }
+  elseif ($phpExe) {
+    $composerPhar = Join-Path $scriptRoot '..\\..\\tools\\php81\\composer.phar'
+    try {
+      $resolvedComposer = Resolve-Path -LiteralPath $composerPhar -ErrorAction Stop
+      Write-Host "composer validate (SuiteCRM via php composer.phar)" -ForegroundColor Cyan
+      & $phpExe $resolvedComposer.Path --working-dir $suite validate
+      $composerHandled = $true
+    }
+    catch {
+      $composerHandled = $false
+    }
+  }
+
+  if (-not $composerHandled) {
+    Write-Host "SKIP: composer not available; cannot run composer validate" -ForegroundColor Yellow
   }
 
   exit 0

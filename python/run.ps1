@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet('raw','autosummary')]
+  [ValidateSet('raw', 'autosummary')]
   [string]$Approach,
 
   [Parameter(Mandatory = $true)]
@@ -38,6 +38,14 @@ if (-not (Test-Path $runDir)) {
   New-Item -ItemType Directory -Path $runDir | Out-Null
 }
 
+$suitecrmRoot = Join-Path $scriptRoot '..\SuiteCRM'
+try {
+  $suitecrmRoot = (Resolve-Path -Path $suitecrmRoot).Path
+}
+catch {
+  # fall back to the joined path when SuiteCRM folder cannot be resolved
+}
+
 if ([string]::IsNullOrWhiteSpace($Output)) {
   $suffix = $(if ($Approach -eq 'raw') { 'codebase' } else { 'autosummarization' })
   $Output = Join-Path $runDir ("latest_{0}.patch" -f $suffix)
@@ -63,6 +71,7 @@ $cmd += @(
   '--max-context-bytes', $MaxContextBytes,
   '--temperature', $Temperature,
   '--max-tokens', $MaxTokens,
+  '--suitecrm-root', $suitecrmRoot,
   '--run-log', $runLog
 )
 
@@ -79,13 +88,15 @@ if ($Approach -eq 'autosummary') {
 }
 
 $runningLine = $(if ($Approach -eq 'raw') {
-  'Running codebase code generator'
-} elseif ($Approach -eq 'autosummary') {
-  'Running auto summarization code generator'
-} else {
-  "Running $Approach"
-})
+    'Running codebase code generator'
+  }
+  elseif ($Approach -eq 'autosummary') {
+    'Running auto summarization code generator'
+  }
+  else {
+    "Running $Approach"
+  })
 Write-Host $runningLine -ForegroundColor Cyan
 Write-Host ($cmd -join ' ')
 
-& $cmd[0] @($cmd[1..($cmd.Length-1)])
+& $cmd[0] @($cmd[1..($cmd.Length - 1)])

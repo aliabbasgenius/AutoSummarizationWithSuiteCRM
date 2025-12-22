@@ -1,27 +1,35 @@
 param(
   # Run one approach or both.
-  [ValidateSet('codebase','autosummarization','both')]
+  [ValidateSet('codebase', 'autosummarization', 'both')]
   [string]$Approach = 'both',
 
   # Which patch filename pattern to use.
-  [ValidateSet('demo','latest')]
+  [ValidateSet('demo', 'latest')]
   [string]$Variant = 'demo',
 
   # Prompt file used by run.ps1
   [string]$Prompt = ".\tasks\ACTIVE_PROMPT.txt",
 
   # Source file(s) to feed into generation.
-  [string[]]$Sources = @("..\..\SuiteCRM\modules\Accounts\Account.php"),
+  [string[]]$Sources = @("..\SuiteCRM\modules\Accounts\Account.php"),
 
   # SuiteCRM repo root.
-  [string]$SuiteCrmRoot = "..\..\SuiteCRM"
+  [string]$SuiteCrmRoot = "..\SuiteCRM",
+
+  # Automatically answer prompts (useful for CI/non-interactive runs).
+  [switch]$AutoApprove = $false
 )
 
 $ErrorActionPreference = 'Stop'
 
 function Resolve-NormalizedPath([string]$p) {
-  $resolved = Resolve-Path -LiteralPath $p
-  return $resolved.Path
+  try {
+    $resolved = Resolve-Path -LiteralPath $p -ErrorAction Stop
+    return $resolved.Path
+  }
+  catch {
+    return [System.IO.Path]::GetFullPath($p)
+  }
 }
 
 function Invoke-Step([string]$title, [scriptblock]$action) {
@@ -29,8 +37,9 @@ function Invoke-Step([string]$title, [scriptblock]$action) {
   & $action
 }
 
-function Run-One([ValidateSet('codebase','autosummarization')] [string]$OneApproach) {
+function Run-One([ValidateSet('codebase', 'autosummarization')] [string]$OneApproach) {
   $scriptRoot = $PSScriptRoot
+  Write-Host "Starting Run-One for $OneApproach" -ForegroundColor DarkGray
   $suite = Resolve-NormalizedPath (Join-Path $scriptRoot $SuiteCrmRoot)
   $promptPath = Resolve-NormalizedPath (Join-Path $scriptRoot $Prompt)
 
@@ -44,7 +53,7 @@ function Run-One([ValidateSet('codebase','autosummarization')] [string]$OneAppro
   $generationSeconds = $null
 
   Invoke-Step "${OneApproach}: Ensure SuiteCRM clean" {
-    $dirty = git -C $suite status --porcelain
+    $dirty = git -C $suite status --porcelain -- .
     if ($dirty) {
       throw "SuiteCRM working tree is not clean. Please stash/commit/revert your changes first.\n$dirty"
     }
@@ -74,7 +83,8 @@ function Run-One([ValidateSet('codebase','autosummarization')] [string]$OneAppro
       $reportObj = Get-Content -LiteralPath $validationReport -Encoding UTF8 | ConvertFrom-Json
       $warns = @($reportObj.findings | Where-Object { $_.severity -eq 'warn' })
       Set-Variable -Scope 2 -Name warningsCount -Value $warns.Count
-    } catch {
+    }
+    catch {
       Set-Variable -Scope 2 -Name warningsCount -Value $null
     }
   }
@@ -106,66 +116,91 @@ function Run-One([ValidateSet('codebase','autosummarization')] [string]$OneAppro
   }
   $touchedFiles = @(
     $touchedFiles |
-      Where-Object { $_ -and $_ -ne '/dev/null' } |
-      Select-Object -Unique
+    Where-Object { $_ -and $_ -ne '/dev/null' } |
+    Select-Object -Unique
   )
 
   $touchesPhp = @($touchedFiles | Where-Object { $_.ToLowerInvariant().EndsWith('.php') }).Count
-  $phpAvailable = (Get-Command php -ErrorAction SilentlyContinue) -ne $null
-  $composerAvailable = (Get-Command composer -ErrorAction SilentlyContinue) -ne $null
 
-  $phpLintRanText = $(if ($phpAvailable -and $touchesPhp -gt 0) { 'YES' } else { 'NO' })
+  $phpExePath = $null
+  $phpCmd = Get-Command php -ErrorAction SilentlyContinue
+  if ($phpCmd) {
+    $phpExePath = $phpCmd.Source
+  }
+  if (-not $phpExePath) {
+    $portablePhp = Join-Path $PSScriptRoot '..\\..\\tools\\php81\\php.exe'
+    if (Test-Path -LiteralPath $portablePhp) {
+      $phpExePath = (Resolve-NormalizedPath $portablePhp)
+    }
+  }
+
+  $composerAvailable = $false
+  $composerCmd = Get-Command composer -ErrorAction SilentlyContinue
+  if ($composerCmd) {
+    $composerAvailable = $true
+  }
+  else {
+    $portableComposer = Join-Path $PSScriptRoot '..\\..\\tools\\php81\\composer.phar'
+    if ($phpExePath -and (Test-Path -LiteralPath $portableComposer)) {
+      $composerAvailable = $true
+    }
+  }
+
+  $phpLintRanText = $(if ($phpExePath -and $touchesPhp -gt 0) { 'YES' } else { 'NO' })
   $composerValidateRanText = $(if ($composerAvailable) { 'YES' } else { 'NO' })
 
   Write-Host "SUCCESS: $OneApproach (patch: $patchPath)" -ForegroundColor Green
   if ($warningsCount -ne $null) {
     Write-Host "- Offline hallucination/format validation: OK (warnings: $warningsCount)" -ForegroundColor Green
-  } else {
+  }
+  else {
     Write-Host "- Offline hallucination/format validation: OK" -ForegroundColor Green
   }
-    Write-Host "- Patch applied to SuiteCRM (NO COMMIT): YES" -ForegroundColor Green
+  Write-Host "- Patch applied to SuiteCRM (NO COMMIT): YES" -ForegroundColor Green
   Write-Host "- SuiteCRM build/compile checks (php -l): $phpLintRanText" -ForegroundColor Green
   Write-Host "- Code quality checks (composer validate): $composerValidateRanText" -ForegroundColor Green
   Write-Host "- Validation report: $validationReport" -ForegroundColor Green
 
   return [pscustomobject]@{
-    Approach = $OneApproach
-    PatchPath = $patchPath
-    ValidationReport = $validationReport
+    Approach          = $OneApproach
+    PatchPath         = $patchPath
+    ValidationReport  = $validationReport
     GenerationSeconds = $generationSeconds
-    PhpLint = $phpLintRanText
-    ComposerValidate = $composerValidateRanText
-    WarningsCount = $warningsCount
+    PhpLint           = $phpLintRanText
+    ComposerValidate  = $composerValidateRanText
+    WarningsCount     = $warningsCount
   }
 }
 
 Set-Location $PSScriptRoot
-Clear-Host
+Write-Host "demo_run_and_verify.ps1 starting" -ForegroundColor DarkGray
+# Clear-Host is noisy in non-interactive runs; skip to preserve diagnostics.
+# Clear-Host
 
 if ($Approach -eq 'both') {
   $results = @()
-  $results += ,(Run-One -OneApproach codebase)
+  $results += , (Run-One -OneApproach codebase)
 
-  $answer = (Read-Host 'Do you want to process the auto summarization? [y/n]').Trim().ToLowerInvariant()
-  if ($answer -eq 'y' -or $answer -eq 'yes') {
-    $confirm = (Read-Host 'Are you sure to perform the auto summarization now [y/s]?').Trim().ToLowerInvariant()
-    if ($confirm -ne 'y' -and $confirm -ne 'yes') {
-      Write-Host "Skipping autosummarization." -ForegroundColor Yellow
-      Write-Host "== Overall summary ==" -ForegroundColor Cyan
-      foreach ($r in $results) {
-        Write-Host "SUCCESS: $($r.Approach)" -ForegroundColor Green
-        Write-Host "- Offline hallucination/format validation: OK" -ForegroundColor Green
-        Write-Host "- Patch applied to SuiteCRM (NO COMMIT): YES" -ForegroundColor Green
-        Write-Host "- SuiteCRM build/compile checks (php -l): $($r.PhpLint)" -ForegroundColor Green
-        Write-Host "- Code quality checks (composer validate): $($r.ComposerValidate)" -ForegroundColor Green
+  $runAutosummary = $false
+  if ($AutoApprove) {
+    $runAutosummary = $true
+  }
+  else {
+    $answer = (Read-Host 'Do you want to process the auto summarization? [y/n]').Trim().ToLowerInvariant()
+    if ($answer -eq 'y' -or $answer -eq 'yes') {
+      $confirm = (Read-Host 'Are you sure to perform the auto summarization now [y/s]?').Trim().ToLowerInvariant()
+      if ($confirm -eq 'y' -or $confirm -eq 'yes') {
+        $runAutosummary = $true
       }
-      exit 0
     }
-    # Ensure we can run autosummarization on a clean tree.
+  }
+
+  if ($runAutosummary) {
     Write-Host "Preparing SuiteCRM for autosummarization (reverting prior patch)" -ForegroundColor Cyan
     & (Join-Path $PSScriptRoot 'apply_patch.ps1') -Approach codebase -Variant $Variant -Action revert -SuiteCrmRoot $SuiteCrmRoot | Out-Host
-    $results += ,(Run-One -OneApproach autosummarization)
-  } else {
+    $results += , (Run-One -OneApproach autosummarization)
+  }
+  else {
     Write-Host "Skipping autosummarization." -ForegroundColor Yellow
   }
 
@@ -177,8 +212,9 @@ if ($Approach -eq 'both') {
     Write-Host "- SuiteCRM build/compile checks (php -l): $($r.PhpLint)" -ForegroundColor Green
     Write-Host "- Code quality checks (composer validate): $($r.ComposerValidate)" -ForegroundColor Green
   }
-} else {
-  if ($Approach -eq 'autosummarization') {
+}
+else {
+  if ($Approach -eq 'autosummarization' -and -not $AutoApprove) {
     $answer = (Read-Host 'Do you want to process the auto summarization? [y/n]').Trim().ToLowerInvariant()
     if ($answer -ne 'y' -and $answer -ne 'yes') {
       Write-Host "Skipping autosummarization." -ForegroundColor Yellow

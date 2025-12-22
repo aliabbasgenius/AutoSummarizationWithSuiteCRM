@@ -1,0 +1,10 @@
+{
+  "input": "D:\\Study\\AutoSummarizationWithSuiteCRM\\python\\runs\\latest_codebase.patch",
+  "suitecrm_root": "D:\\Study\\AutoSummarizationWithSuiteCRM\\SuiteCRM",
+  "findings": [],
+  "counts": {
+    "error": 0,
+    "warn": 0,
+    "info": 0
+  }
+}

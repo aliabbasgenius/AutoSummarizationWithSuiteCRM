@@ -1,19 +1,44 @@
-diff --git a/include/CleanCSV.php b/include/CleanCSV.php
---- a/include/CleanCSV.php
-+++ b/include/CleanCSV.php
-@@ -36,12 +36,9 @@
-     public function escapeField($cell)
+--- a/modules/Accounts/Account.php
++++ b/modules/Accounts/Account.php
+@@ -383,19 +383,32 @@
+      * Create a query string for select Products/Services Purchased list from database.
+      * @return string final query
+      */
+-    public function getProductsServicesPurchasedQuery()
++    public function getProductsServicesPurchasedQuery($stages = array('Closed Accepted'), $limit = null)
      {
--        if (!is_string($cell) || empty($cell)) {
--            return $cell;
--        }
+         $idQuoted = $this->db->quoted($this->id);
++        $stageCondition = "aos_quotes.stage LIKE 'Closed Accepted'";
++
++        if (!empty($stages)) {
++            $quotedStages = array();
++            foreach ($stages as $stage) {
++                $quotedStages[] = $this->db->quoted($stage);
++            }
++            $stageCondition = 'aos_quotes.stage IN (' . implode(',', $quotedStages) . ')';
++        }
  
--        if (in_array($cell[0], $this->startingChars, true)) {
--            return $this->escapeChar . $cell;
--        }
- 
-+        if (is_string($cell) && !empty($cell) && in_array($cell[0], $this->startingChars, true)) {
-+            return $this->escapeChar . $cell;
-+        }        
-         return $cell;
+         $query = "
+-			SELECT
+-				aos_products_quotes.*
+-			FROM
+-				aos_products_quotes
+-			JOIN aos_quotes ON aos_quotes.id = aos_products_quotes.parent_id AND aos_quotes.stage LIKE 'Closed Accepted' AND aos_quotes.deleted = 0 AND aos_products_quotes.deleted = 0
+-			JOIN accounts ON accounts.id = aos_quotes.billing_account_id AND accounts.id = $idQuoted
+-
+-			";
++            SELECT
++                aos_products_quotes.*
++            FROM
++                aos_products_quotes
++            JOIN aos_quotes ON aos_quotes.id = aos_products_quotes.parent_id AND $stageCondition AND aos_quotes.deleted = 0 AND aos_products_quotes.deleted = 0
++            JOIN accounts ON accounts.id = aos_quotes.billing_account_id AND accounts.id = $idQuoted
++        ";
++
++        if ($limit !== null && (int)$limit > 0) {
++            $query .= ' LIMIT ' . (int)$limit;
++        }
++
+         return $query;
      }
+ }
