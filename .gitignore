@@ -18,6 +18,7 @@ obj/
 __pycache__/
 .python-version
 .env
+/.env
 .venv/
 **/.venv/
 *.code-workspace
@@ -62,3 +63,16 @@ python/probe_gpt5_api.py
 # Local tool configuration
 python/.venv/
 AzureOpenAICodeGen/*.GeneratedMSBuildEditorConfig.editorconfig
+
+# Local tooling
+tools/php81/
+
+# SuiteCRM generated artifacts
+SuiteCRM/vendor/
+SuiteCRM/cache/
+SuiteCRM/logs/
+SuiteCRM/upload/
+SuiteCRM/config.php
+SuiteCRM/config_override.php
+SuiteCRM/config_si.php
+SuiteCRM/suitecrm.log
